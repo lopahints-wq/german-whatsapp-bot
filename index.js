@@ -14,6 +14,11 @@ const app = express();
 
 const PORT = process.env.PORT || 10000;
 
+
+// ==========================================
+// SERVER
+// ==========================================
+
 app.get("/", (req, res) => {
   res.send("🇩🇪 German B1 WhatsApp AI Bot is running!");
 });
@@ -32,12 +37,11 @@ async function askAI(question) {
   const apiKey = process.env.OPENAI_API_KEY;
 
   if (!apiKey) {
-    throw new Error(
-      "OPENAI_API_KEY is missing."
-    );
+    throw new Error("OPENAI_API_KEY is missing.");
   }
 
   console.log("🧠 Sending message to OpenAI...");
+  console.log("❓ Question:", question);
 
   const response = await fetch(
     "https://api.openai.com/v1/responses",
@@ -50,14 +54,17 @@ async function askAI(question) {
       },
 
       body: JSON.stringify({
+
         model: "gpt-5",
 
         instructions:
-          "أنت مدرس لغة ألمانية داخل WhatsApp. " +
-          "ساعد المستخدم على تعلم الألمانية من مستوى A1 إلى B1. " +
+          "أنت مساعد ذكاء اصطناعي داخل WhatsApp. " +
+          "أنت مدرس لغة ألمانية من مستوى A1 إلى B1، " +
+          "لكن يمكنك الإجابة عن أي سؤال يطرحه المستخدم. " +
+          "إذا كان السؤال متعلقًا بالألمانية، ساعد المستخدم على التعلم. " +
           "إذا كتب المستخدم بالألمانية، صحح أخطاءه واشرحها بالعربية باختصار. " +
-          "إذا كتب بالعربية، ساعده في تعلم الألمانية وأعطه أمثلة. " +
-          "كن ودودًا ومختصرًا ومناسبًا لرسائل WhatsApp.",
+          "إذا كتب بالعربية، أعطه الألمانية المناسبة مع أمثلة عند الحاجة. " +
+          "أجب بشكل واضح ومختصر ومناسب لرسائل WhatsApp.",
 
         input: question
       })
@@ -68,7 +75,7 @@ async function askAI(question) {
 
   if (!response.ok) {
 
-    console.log("❌ OpenAI ERROR:");
+    console.log("❌ OPENAI ERROR:");
     console.log(JSON.stringify(data, null, 2));
 
     throw new Error(
@@ -77,10 +84,13 @@ async function askAI(question) {
     );
   }
 
-  return (
-    data.output_text ||
-    "❌ لم أستطع إنشاء إجابة."
-  );
+  const answer = data.output_text;
+
+  if (!answer) {
+    return "❌ لم أستطع إنشاء إجابة.";
+  }
+
+  return answer;
 }
 
 
@@ -99,7 +109,7 @@ async function startBot() {
 
 
     // ========================================
-    // WHATSAPP CONNECTION
+    // WHATSAPP
     // ========================================
 
     const sock = makeWASocket({
@@ -110,7 +120,10 @@ async function startBot() {
         level: "silent"
       }),
 
-      // Chrome كما طلبت
+      // ======================================
+      // CHROME - macOS
+      // ======================================
+
       browser: Browsers.macOS("Chrome"),
 
       markOnlineOnConnect: false,
@@ -119,6 +132,10 @@ async function startBot() {
     });
 
 
+    // ========================================
+    // SAVE AUTH
+    // ========================================
+
     sock.ev.on(
       "creds.update",
       saveCreds
@@ -126,7 +143,7 @@ async function startBot() {
 
 
     // ========================================
-    // CONNECTION STATUS
+    // CONNECTION
     // ========================================
 
     sock.ev.on(
@@ -164,6 +181,10 @@ async function startBot() {
           );
 
           console.log(
+            "🌐 Browser: macOS Chrome"
+          );
+
+          console.log(
             "========================================"
           );
 
@@ -195,7 +216,7 @@ async function startBot() {
             );
 
             console.log(
-              "⚠️ Please pair the WhatsApp account again."
+              "⚠️ A new pairing is required."
             );
 
             return;
@@ -323,7 +344,7 @@ async function startBot() {
 
             if (!msg.message) continue;
 
-            // لا يرد على رسائله
+            // لا يرد على نفسه
             if (msg.key.fromMe) continue;
 
 
@@ -338,9 +359,7 @@ async function startBot() {
             // GROUPS ONLY
             // ==================================
 
-            if (
-              !jid.endsWith("@g.us")
-            ) {
+            if (!jid.endsWith("@g.us")) {
 
               continue;
 
@@ -348,12 +367,14 @@ async function startBot() {
 
 
             // ==================================
-            // GET MESSAGE TEXT
+            // GET TEXT
             // ==================================
 
             const text =
               msg.message.conversation ||
               msg.message.extendedTextMessage?.text ||
+              msg.message.ephemeralMessage?.message?.conversation ||
+              msg.message.ephemeralMessage?.message?.extendedTextMessage?.text ||
               "";
 
 
@@ -376,8 +397,7 @@ async function startBot() {
             // ==================================
 
             if (
-              cleanText.toLowerCase() ===
-              "!test"
+              cleanText.toLowerCase() === "!test"
             ) {
 
               await sock.sendMessage(
@@ -403,8 +423,7 @@ async function startBot() {
             // ==================================
 
             if (
-              cleanText.toLowerCase() ===
-              "!help"
+              cleanText.toLowerCase() === "!help"
             ) {
 
               await sock.sendMessage(
@@ -412,10 +431,11 @@ async function startBot() {
                 {
                   text:
                     "🇩🇪🤖 German B1 AI Bot\n\n" +
-                    "لاستخدام الذكاء الاصطناعي:\n\n" +
-                    "!ai سؤالك\n\n" +
+                    "يمكنك الآن كتابة أي سؤال مباشرة.\n\n" +
                     "مثال:\n" +
-                    "!ai ما معنى كلمة gehen؟"
+                    "ما معنى كلمة gehen؟\n\n" +
+                    "أو:\n" +
+                    "Hallo, wie geht es dir?"
                 }
               );
 
@@ -424,77 +444,52 @@ async function startBot() {
 
 
             // ==================================
-            // AI
+            // AI - ANY MESSAGE
             // ==================================
 
-            if (
-              cleanText
-                .toLowerCase()
-                .startsWith("!ai")
-            ) {
-
-              const question =
-                cleanText
-                  .substring(3)
-                  .trim();
+            console.log(
+              "🤖 Sending to AI..."
+            );
 
 
-              if (!question) {
-
-                await sock.sendMessage(
-                  jid,
-                  {
-                    text:
-                      "🤖 اكتب سؤالك بعد !ai\n\n" +
-                      "مثال:\n" +
-                      "!ai كيف أقول أنا أتعلم الألمانية؟"
-                  }
-                );
-
-                continue;
+            // رسالة انتظار
+            await sock.sendMessage(
+              jid,
+              {
+                text: "🤖 لحظة، أفكر..."
               }
+            );
 
 
-              console.log(
-                "🤖 QUESTION:",
-                question
-              );
+            // إرسال السؤال إلى OpenAI
+            const answer =
+              await askAI(cleanText);
 
 
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-                    "🤖 لحظة، أفكر..."
-                }
-              );
+            console.log(
+              "🤖 ANSWER:",
+              answer
+            );
 
 
-              const answer =
-                await askAI(question);
+            // ==================================
+            // SEND AI ANSWER
+            // ==================================
+
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "🇩🇪🤖 German B1 Bot\n\n" +
+                  answer
+              }
+            );
 
 
-              console.log(
-                "🤖 ANSWER:",
-                answer
-              );
+            console.log(
+              "✅ AI reply sent."
+            );
 
-
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-                    "🇩🇪🤖 German B1 Bot\n\n" +
-                    answer
-                }
-              );
-
-
-              console.log(
-                "✅ AI reply sent."
-              );
-
-            }
 
           } catch (error) {
 
@@ -503,12 +498,34 @@ async function startBot() {
               error.message
             );
 
+
+            try {
+
+              await sock.sendMessage(
+                msg.key.remoteJid,
+                {
+                  text:
+                    "❌ حدث خطأ أثناء معالجة السؤال.\n\n" +
+                    "تحقق من OPENAI_API_KEY ثم راجع Logs."
+                }
+              );
+
+            } catch (sendError) {
+
+              console.log(
+                "❌ Could not send error message:",
+                sendError.message
+              );
+
+            }
+
           }
 
         }
 
       }
     );
+
 
   } catch (error) {
 
@@ -534,7 +551,7 @@ async function startBot() {
 
 
 // ==========================================
-// START BOT
+// START
 // ==========================================
 
 console.log(
