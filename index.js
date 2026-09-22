@@ -33,18 +33,19 @@ app.listen(PORT, () => {
 // ==========================================
 
 async function askAI(question) {
+async function askAI(question) {
 
-  const apiKey = process.env.OPENAI_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    throw new Error("OPENAI_API_KEY is missing.");
+    throw new Error("GROQ_API_KEY is missing.");
   }
 
-  console.log("🧠 Sending message to OpenAI...");
+  console.log("🧠 Sending message to Groq...");
   console.log("❓ Question:", question);
 
   const response = await fetch(
-    "https://api.openai.com/v1/responses",
+    "https://api.groq.com/openai/v1/responses",
     {
       method: "POST",
 
@@ -55,7 +56,7 @@ async function askAI(question) {
 
       body: JSON.stringify({
 
-        model: "gpt-5",
+        model: "openai/gpt-oss-20b",
 
         instructions:
           "أنت مساعد ذكاء اصطناعي داخل WhatsApp. " +
@@ -75,20 +76,20 @@ async function askAI(question) {
 
   if (!response.ok) {
 
-    console.log("❌ OPENAI ERROR:");
+    console.log("❌ GROQ ERROR:");
     console.log(JSON.stringify(data, null, 2));
 
     throw new Error(
       data?.error?.message ||
-      "OpenAI request failed."
+      "Groq request failed."
     );
   }
 
-  const answer = data.output_text;
-
-  if (!answer) {
-    return "❌ لم أستطع إنشاء إجابة.";
-  }
+  return (
+    data.output_text ||
+    "❌ لم أستطع إنشاء إجابة."
+  );
+}
 
   return answer;
 }
