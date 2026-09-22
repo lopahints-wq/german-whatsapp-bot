@@ -1,0 +1,13 @@
+{
+  "name": "german-whatsapp-bot",
+  "version": "1.0.0",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "latest",
+    "express": "latest",
+    "pino": "latest"
+  }
+}
