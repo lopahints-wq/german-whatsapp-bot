@@ -1,12 +1,10 @@
 const express = require("express");
 const pino = require("pino");
-
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason
 } = require("@whiskeysockets/baileys");
-
 const { Boom } = require("@hapi/boom");
 
 const app = express();
@@ -17,17 +15,20 @@ app.get("/", (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🌐 Server running on port ${PORT}`);
+  console.log("🌐 Server started on port " + PORT);
 });
 
+const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
 async function startBot() {
-  const { state, saveCreds } =
-    await useMultiFileAuthState("auth_info");
+  const { state, saveCreds } = await useMultiFileAuthState("./auth_info");
 
   const sock = makeWASocket({
     auth: state,
     logger: pino({ level: "silent" }),
-    printQRInTerminal: false
+    browser: ["German B1 Bot", "Chrome", "1.0.0"],
+    markOnlineOnConnect: false,
+    syncFullHistory: false
   });
 
   sock.ev.on("creds.update", saveCreds);
@@ -35,46 +36,53 @@ async function startBot() {
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect } = update;
 
+    if (connection === "connecting") {
+      console.log("🔄 Connecting to WhatsApp...");
+    }
+
     if (connection === "open") {
+      console.log("================================");
       console.log("✅ WHATSAPP CONNECTED!");
+      console.log("================================");
     }
 
     if (connection === "close") {
-      const statusCode =
+      const code =
         lastDisconnect?.error instanceof Boom
           ? lastDisconnect.error.output.statusCode
-          : null;
+          : 0;
 
-      const shouldReconnect =
-        statusCode !== DisconnectReason.loggedOut;
+      console.log("❌ WhatsApp disconnected. Code:", code);
 
-      console.log("❌ WhatsApp disconnected.");
-
-      if (shouldReconnect) {
-        console.log("🔄 Reconnecting...");
+      if (code !== DisconnectReason.loggedOut) {
+        console.log("🔄 Reconnecting in 5 seconds...");
         setTimeout(startBot, 5000);
+      } else {
+        console.log("⚠️ WhatsApp logged out.");
       }
     }
   });
 
-  // Pairing code
+  // إنشاء كود الربط
   if (!state.creds.registered) {
-    const number = process.env.WHATSAPP_NUMBER;
+    const phoneNumber = process.env.WHATSAPP_NUMBER;
 
-    if (!number) {
-      console.log(
-        "⚠️ Add WHATSAPP_NUMBER in Render Environment Variables."
-      );
+    if (!phoneNumber) {
+      console.log("❌ WHATSAPP_NUMBER is missing.");
       return;
     }
 
+    await sleep(3000);
+
     try {
-      const code = await sock.requestPairingCode(number);
+      const pairingCode = await sock.requestPairingCode(
+        phoneNumber.replace(/\D/g, "")
+      );
 
       console.log("");
       console.log("================================");
-      console.log("📱 WHATSAPP PAIRING CODE:");
-      console.log(code);
+      console.log("📱 WHATSAPP PAIRING CODE");
+      console.log(pairingCode);
       console.log("================================");
       console.log("");
     } catch (error) {
@@ -82,38 +90,36 @@ async function startBot() {
     }
   }
 
-  // Receive messages
+  // استقبال رسائل المجموعات
   sock.ev.on("messages.upsert", async ({ messages }) => {
     try {
-      const message = messages[0];
+      const msg = messages[0];
 
-      if (!message || !message.message) return;
+      if (!msg || !msg.message) return;
+      if (msg.key.fromMe) return;
 
-      if (message.key.fromMe) return;
+      const jid = msg.key.remoteJid;
 
-      const jid = message.key.remoteJid;
-
-      // Only groups
+      // المجموعات فقط
       if (!jid || !jid.endsWith("@g.us")) return;
 
       const text =
-        message.message.conversation ||
-        message.message.extendedTextMessage?.text ||
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
         "";
 
-      console.log("📩 Group message:", text);
+      console.log("📩 GROUP:", text);
 
-      // Test command
-      if (text.toLowerCase() === "!test") {
+      if (text.trim().toLowerCase() === "!test") {
         await sock.sendMessage(jid, {
           text:
-            "🇩🇪🤖 German B1 Bot يعمل!\n\n" +
-            "البوت متصل بالمجموعة بنجاح."
+            "🇩🇪🤖 German B1 Bot\n\n" +
+            "✅ البوت متصل بالمجموعة بنجاح!"
         });
       }
 
     } catch (error) {
-      console.log("Message error:", error);
+      console.log("Message error:", error.message);
     }
   });
 }
