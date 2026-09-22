@@ -6,7 +6,7 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "latest",
+    "@whiskeysockets/baileys": "6.7.20",
     "@hapi/boom": "latest",
     "express": "latest",
     "pino": "latest"
