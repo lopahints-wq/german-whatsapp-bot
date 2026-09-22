@@ -1,6 +1,5 @@
 const express = require("express");
 const pino = require("pino");
-const OpenAI = require("openai");
 
 const {
   default: makeWASocket,
@@ -10,443 +9,523 @@ const {
 
 const { Boom } = require("@hapi/boom");
 
-// ========================================
-// SERVER
-// ========================================
-
 const app = express();
 
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.send("🇩🇪 German B1 WhatsApp Bot is running!");
+  res.send("🇩🇪 German B1 WhatsApp AI Bot is running!");
 });
 
 app.listen(PORT, () => {
   console.log("🌐 Server started on port " + PORT);
 });
 
-// ========================================
+const sleep = (ms) =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+
+// ============================================
 // OPENAI
-// ========================================
+// ============================================
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
+async function askAI(question) {
 
-// ========================================
-// WHATSAPP BOT
-// ========================================
+  const apiKey = process.env.OPENAI_API_KEY;
+
+  if (!apiKey) {
+    throw new Error(
+      "OPENAI_API_KEY is missing in Render Environment Variables."
+    );
+  }
+
+  console.log("🧠 Sending to OpenAI...");
+
+  const response = await fetch(
+    "https://api.openai.com/v1/responses",
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + apiKey
+      },
+
+      body: JSON.stringify({
+        model: "gpt-5",
+
+        instructions:
+          "أنت مدرس لغة ألمانية داخل WhatsApp. " +
+          "ساعد المستخدم على تعلم الألمانية من مستوى A1 إلى B1. " +
+          "إذا كتب المستخدم بالألمانية، صحح أخطاءه واشرحها بالعربية باختصار. " +
+          "إذا كتب بالعربية، ساعده بالترجمة والأمثلة الألمانية. " +
+          "كن ودودًا ومختصرًا ومناسبًا لمحادثة WhatsApp.",
+
+        input: question
+      })
+    }
+  );
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    console.log("❌ OPENAI ERROR:");
+    console.log(JSON.stringify(data, null, 2));
+
+    throw new Error(
+      data?.error?.message ||
+      "OpenAI request failed."
+    );
+  }
+
+  return (
+    data.output_text ||
+    "❌ لم أستطع إنشاء إجابة."
+  );
+}
+
+
+// ============================================
+// START WHATSAPP BOT
+// ============================================
 
 async function startBot() {
 
-  const { state, saveCreds } =
-    await useMultiFileAuthState("./auth_info");
+  try {
 
-  const sock = makeWASocket({
-    auth: state,
+    const {
+      state,
+      saveCreds
+    } = await useMultiFileAuthState("./auth_info");
 
-    logger: pino({
-      level: "silent"
-    }),
 
-    browser: [
-      "German B1 Bot",
-      "Chrome",
-      "1.0.0"
-    ],
+    // ========================================
+    // نفس إعداد الاتصال القديم
+    // ========================================
 
-    markOnlineOnConnect: false,
+    const sock = makeWASocket({
 
-    syncFullHistory: false
-  });
+      auth: state,
 
-  // حفظ بيانات تسجيل الدخول
-  sock.ev.on("creds.update", saveCreds);
+      logger: pino({
+        level: "silent"
+      }),
 
-  // ========================================
-  // CONNECTION
-  // ========================================
+      // لا نغير هذا
+      browser: [
+        "German B1 Bot",
+        "Chrome",
+        "1.0.0"
+      ],
 
-  sock.ev.on(
-    "connection.update",
-    async (update) => {
+      markOnlineOnConnect: false,
 
-      const {
-        connection,
-        lastDisconnect
-      } = update;
+      syncFullHistory: false
+    });
 
-      // -------------------------
-      // Connecting
-      // -------------------------
 
-      if (connection === "connecting") {
+    sock.ev.on(
+      "creds.update",
+      saveCreds
+    );
 
-        console.log(
-          "🔄 Connecting to WhatsApp..."
-        );
-      }
 
-      // -------------------------
-      // Connected
-      // -------------------------
+    // ========================================
+    // CONNECTION
+    // ========================================
 
-      if (connection === "open") {
+    sock.ev.on(
+      "connection.update",
+      async (update) => {
 
-        console.log("");
-        console.log(
-          "================================"
-        );
+        const {
+          connection,
+          lastDisconnect
+        } = update;
 
-        console.log(
-          "✅ WHATSAPP CONNECTED!"
-        );
 
-        console.log(
-          "================================"
-        );
+        if (connection === "connecting") {
 
-        console.log("");
-      }
+          console.log(
+            "🔄 Connecting to WhatsApp..."
+          );
 
-      // -------------------------
-      // Disconnected
-      // -------------------------
+        }
 
-      if (connection === "close") {
 
-        const code =
-          lastDisconnect?.error instanceof Boom
-            ? lastDisconnect.error.output.statusCode
-            : 0;
+        if (connection === "open") {
 
-        console.log(
-          "❌ WhatsApp disconnected. Code:",
-          code
-        );
+          console.log("");
+          console.log(
+            "================================"
+          );
 
-        // إذا لم يتم تسجيل الخروج
-        if (
-          code !== DisconnectReason.loggedOut
-        ) {
+          console.log(
+            "✅ WHATSAPP CONNECTED!"
+          );
+
+          console.log(
+            "🤖 AI BOT IS READY!"
+          );
+
+          console.log(
+            "================================"
+          );
+
+          console.log("");
+
+        }
+
+
+        if (connection === "close") {
+
+          const code =
+            lastDisconnect?.error instanceof Boom
+              ? lastDisconnect.error.output.statusCode
+              : 0;
+
+
+          console.log(
+            "❌ WhatsApp disconnected. Code:",
+            code
+          );
+
+
+          if (
+            code === DisconnectReason.loggedOut
+          ) {
+
+            console.log(
+              "⚠️ WhatsApp logged out."
+            );
+
+            console.log(
+              "⚠️ A new pairing is required."
+            );
+
+            return;
+          }
+
 
           console.log(
             "🔄 Reconnecting in 5 seconds..."
           );
 
-          setTimeout(
-            startBot,
-            5000
-          );
 
-        } else {
+          setTimeout(() => {
 
-          console.log(
-            "⚠️ WhatsApp logged out."
-          );
+            startBot();
 
-          console.log(
-            "⚠️ A new pairing is required."
-          );
+          }, 5000);
+
         }
+
       }
-    }
-  );
+    );
 
-  // ========================================
-  // PAIRING CODE
-  // ========================================
 
-  if (!state.creds.registered) {
+    // ========================================
+    // PAIRING CODE
+    // ========================================
 
-    const phoneNumber =
-      process.env.WHATSAPP_NUMBER;
+    if (!state.creds.registered) {
 
-    if (!phoneNumber) {
+      const phoneNumber =
+        process.env.WHATSAPP_NUMBER;
 
-      console.log(
-        "❌ WHATSAPP_NUMBER is missing."
-      );
 
-      return;
-    }
+      if (!phoneNumber) {
 
-    try {
-
-      console.log(
-        "📱 Requesting WhatsApp pairing code..."
-      );
-
-      // انتظار بسيط حتى يبدأ الاتصال
-      await new Promise(
-        resolve => setTimeout(resolve, 5000)
-      );
-
-      const pairingCode =
-        await sock.requestPairingCode(
-          phoneNumber.replace(/\D/g, "")
+        console.log(
+          "❌ WHATSAPP_NUMBER is missing."
         );
 
-      console.log("");
+        return;
+      }
 
-      console.log(
-        "================================"
-      );
 
-      console.log(
-        "📱 WHATSAPP PAIRING CODE"
-      );
+      const cleanNumber =
+        phoneNumber.replace(/\D/g, "");
 
-      console.log(
-        pairingCode
-      );
 
-      console.log(
-        "================================"
-      );
+      await sleep(3000);
 
-      console.log("");
-
-      console.log(
-        "📱 WhatsApp → Linked Devices"
-      );
-
-      console.log(
-        "→ Link a device"
-      );
-
-      console.log(
-        "→ Link with phone number"
-      );
-
-      console.log("");
-
-    } catch (error) {
-
-      console.log(
-        "❌ Pairing error:",
-        error.message
-      );
-    }
-  }
-
-  // ========================================
-  // MESSAGES
-  // ========================================
-
-  sock.ev.on(
-    "messages.upsert",
-    async ({ messages }) => {
 
       try {
 
-        const msg = messages[0];
+        console.log("");
+        console.log(
+          "📱 Requesting WhatsApp pairing code..."
+        );
 
-        // لا توجد رسالة
-        if (!msg) return;
 
-        // لا توجد بيانات
-        if (!msg.message) return;
+        const pairingCode =
+          await sock.requestPairingCode(
+            cleanNumber
+          );
 
-        // تجاهل رسائل البوت نفسه
-        if (msg.key.fromMe) return;
-
-        const jid =
-          msg.key.remoteJid;
-
-        // ====================================
-        // GROUPS ONLY
-        // ====================================
-
-        if (
-          !jid ||
-          !jid.endsWith("@g.us")
-        ) {
-          return;
-        }
-
-        // ====================================
-        // GET TEXT
-        // ====================================
-
-        const text =
-          msg.message.conversation ||
-          msg.message.extendedTextMessage?.text ||
-          "";
-
-        if (!text.trim()) return;
 
         console.log("");
         console.log(
-          "📩 GROUP:",
-          text
-        );
-
-        // ====================================
-        // TEST COMMAND
-        // ====================================
-
-        if (
-          text.trim().toLowerCase() ===
-          "!test"
-        ) {
-
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                "🇩🇪🤖 German B1 Bot\n\n" +
-                "✅ البوت متصل بالمجموعة بنجاح!"
-            }
-          );
-
-          console.log(
-            "✅ Test response sent."
-          );
-
-          return;
-        }
-
-        // ====================================
-        // HELP COMMAND
-        // ====================================
-
-        if (
-          text.trim().toLowerCase() ===
-          "!help"
-        ) {
-
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                "🇩🇪🤖 German B1 Bot\n\n" +
-                "أنا مدرس ألمانية بالذكاء الاصطناعي.\n\n" +
-                "أرسل أي جملة أو سؤال.\n\n" +
-                "مثال:\n" +
-                "Hallo, ich möchte Deutsch lernen."
-            }
-          );
-
-          return;
-        }
-
-        // ====================================
-        // CHECK OPENAI KEY
-        // ====================================
-
-        if (!process.env.OPENAI_API_KEY) {
-
-          console.log(
-            "❌ OPENAI_API_KEY is missing."
-          );
-
-          await sock.sendMessage(
-            jid,
-            {
-              text:
-                "❌ لم يتم إعداد OPENAI_API_KEY في Render."
-            }
-          );
-
-          return;
-        }
-
-        // ====================================
-        // SEND TO AI
-        // ====================================
-
-        console.log(
-          "🤖 Sending message to OpenAI..."
-        );
-
-        const response =
-          await openai.responses.create({
-
-            model: "gpt-5.6-luna",
-
-            instructions:
-              `
-أنت مدرس لغة ألمانية داخل مجموعة واتساب.
-
-مهمتك مساعدة الطلاب على تعلم اللغة الألمانية.
-
-المستوى الأساسي A1 إلى B1.
-
-إذا كتب الطالب بالألمانية:
-1. افهم قصده.
-2. صحح الأخطاء إن وجدت.
-3. اكتب الجملة الصحيحة.
-4. اشرح الخطأ بالعربية بطريقة بسيطة.
-5. أعطه مثالاً إضافياً بالألمانية.
-
-إذا كتب الطالب بالعربية:
-أجب بالعربية وأعطه أمثلة باللغة الألمانية.
-
-إذا سأل عن كلمة ألمانية:
-اشرح معناها بالعربية وأعطه مثالاً.
-
-اجعل إجاباتك قصيرة وواضحة ومناسبة لواتساب.
-
-لا تستخدم إجابات طويلة جداً.
-
-كن ودوداً ومشجعاً.
-`,
-
-            input: text,
-
-            max_output_tokens: 500
-          });
-
-        // ====================================
-        // GET AI ANSWER
-        // ====================================
-
-        const answer =
-          response.output_text ||
-          "عذراً، لم أستطع إنشاء إجابة الآن.";
-
-        console.log(
-          "🤖 AI:",
-          answer
-        );
-
-        // ====================================
-        // SEND ANSWER TO WHATSAPP
-        // ====================================
-
-        await sock.sendMessage(
-          jid,
-          {
-            text:
-              "🇩🇪🤖 German B1 Bot\n\n" +
-              answer
-          }
+          "================================"
         );
 
         console.log(
-          "✅ AI response sent to group."
+          "📱 WHATSAPP PAIRING CODE"
         );
+
+        console.log(
+          pairingCode
+        );
+
+        console.log(
+          "================================"
+        );
+
+        console.log("");
 
       } catch (error) {
 
         console.log(
-          "❌ Message error:",
+          "❌ Pairing error:",
           error.message
         );
 
-        console.log(
-          error
-        );
       }
+
     }
-  );
+
+
+    // ========================================
+    // RECEIVE MESSAGES
+    // ========================================
+
+    sock.ev.on(
+      "messages.upsert",
+      async ({ messages }) => {
+
+        try {
+
+          const msg = messages[0];
+
+
+          if (!msg) return;
+
+          if (!msg.message) return;
+
+          if (msg.key.fromMe) return;
+
+
+          const jid =
+            msg.key.remoteJid;
+
+
+          if (!jid) return;
+
+
+          // ==================================
+          // المجموعات فقط
+          // ==================================
+
+          if (!jid.endsWith("@g.us")) {
+            return;
+          }
+
+
+          // ==================================
+          // استخراج النص
+          // ==================================
+
+          const text =
+            msg.message.conversation ||
+            msg.message.extendedTextMessage?.text ||
+            "";
+
+
+          const cleanText =
+            text.trim();
+
+
+          if (!cleanText) return;
+
+
+          console.log("");
+          console.log(
+            "📩 GROUP:",
+            cleanText
+          );
+
+
+          // ==================================
+          // TEST
+          // ==================================
+
+          if (
+            cleanText.toLowerCase() ===
+            "!test"
+          ) {
+
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "🇩🇪🤖 German B1 Bot\n\n" +
+                  "✅ البوت متصل بالمجموعة بنجاح!"
+              }
+            );
+
+            console.log(
+              "✅ Test reply sent."
+            );
+
+            return;
+          }
+
+
+          // ==================================
+          // HELP
+          // ==================================
+
+          if (
+            cleanText.toLowerCase() ===
+            "!help"
+          ) {
+
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "🇩🇪🤖 German B1 AI Bot\n\n" +
+                  "لطرح سؤال على الذكاء الاصطناعي:\n\n" +
+                  "!ai سؤالك\n\n" +
+                  "مثال:\n" +
+                  "!ai ما معنى كلمة gehen؟"
+              }
+            );
+
+            return;
+          }
+
+
+          // ==================================
+          // AI
+          // ==================================
+
+          if (
+            cleanText
+              .toLowerCase()
+              .startsWith("!ai")
+          ) {
+
+            const question =
+              cleanText
+                .substring(3)
+                .trim();
+
+
+            if (!question) {
+
+              await sock.sendMessage(
+                jid,
+                {
+                  text:
+                    "🤖 اكتب سؤالك بعد !ai\n\n" +
+                    "مثال:\n" +
+                    "!ai كيف أقول أنا أتعلم الألمانية؟"
+                }
+              );
+
+              return;
+            }
+
+
+            console.log(
+              "🤖 QUESTION:",
+              question
+            );
+
+
+            // رسالة انتظار
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "🤖 لحظة، أفكر..."
+              }
+            );
+
+
+            const answer =
+              await askAI(question);
+
+
+            console.log(
+              "🤖 ANSWER:",
+              answer
+            );
+
+
+            await sock.sendMessage(
+              jid,
+              {
+                text:
+                  "🇩🇪🤖 German B1 Bot\n\n" +
+                  answer
+              }
+            );
+
+
+            console.log(
+              "✅ AI reply sent."
+            );
+
+            return;
+          }
+
+        } catch (error) {
+
+          console.log("");
+          console.log(
+            "❌ MESSAGE ERROR:"
+          );
+
+          console.log(
+            error.message
+          );
+
+          console.log("");
+
+        }
+
+      }
+    );
+
+  } catch (error) {
+
+    console.log(
+      "❌ BOT ERROR:",
+      error.message
+    );
+
+
+    console.log(
+      "🔄 Restarting in 10 seconds..."
+    );
+
+
+    setTimeout(
+      startBot,
+      10000
+    );
+
+  }
+
 }
 
-// ========================================
+
+// ============================================
 // START
-// ========================================
+// ============================================
 
 console.log(
   "🚀 Starting German B1 WhatsApp Bot..."
