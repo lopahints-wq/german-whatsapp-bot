@@ -6,10 +6,10 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "@whiskeysockets/baileys": "latest",
-    "@hapi/boom": "latest",
-    "express": "latest",
-    "pino": "latest",
+    "@whiskeysockets/baileys": "6.7.24",
+    "@hapi/boom": "10.0.1",
+    "express": "4.21.2",
+    "pino": "9.6.0",
     "openai": "latest"
   }
 }
