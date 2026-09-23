@@ -29,21 +29,15 @@ app.listen(PORT, () => {
 
 
 // ==================================================
-// QUIZ / POINTS SYSTEM
+// POINTS / QUIZ SYSTEM
 // ==================================================
 
-// النقاط محفوظة في الذاكرة فقط.
-// لا علاقة لها باتصال WhatsApp.
-
 const scores = {};
-
-
-// السؤال الحالي لكل عضو في كل مجموعة
 const activeQuizzes = {};
 
 
 // ==================================================
-// GET USER ID
+// USER ID
 // ==================================================
 
 function getUserId(msg) {
@@ -57,7 +51,7 @@ function getUserId(msg) {
 
 
 // ==================================================
-// GET USER NAME
+// USER NAME
 // ==================================================
 
 function getUserName(msg) {
@@ -71,7 +65,7 @@ function getUserName(msg) {
 
 
 // ==================================================
-// GET LEVEL
+// LEVEL
 // ==================================================
 
 function getLevel(points) {
@@ -94,7 +88,7 @@ function getLevel(points) {
 
 
 // ==================================================
-// GET USER SCORE
+// SCORE
 // ==================================================
 
 function getScore(userId) {
@@ -122,7 +116,7 @@ function getScore(userId) {
 const quizQuestions = [
 
   {
-    question: "ما معنى كلمة **laufen**؟",
+    question: "ما معنى كلمة laufen؟",
     options: [
       "1️⃣ يأكل",
       "2️⃣ يجري / يمشي",
@@ -146,7 +140,7 @@ const quizQuestions = [
   },
 
   {
-    question: "ما هو Artikel لكلمة **Tisch**؟",
+    question: "ما هو Artikel لكلمة Tisch؟",
     options: [
       "1️⃣ die",
       "2️⃣ das",
@@ -170,7 +164,7 @@ const quizQuestions = [
   },
 
   {
-    question: "ما هو Perfekt للجملة: **Ich esse Pizza**؟",
+    question: "ما هو Perfekt للجملة: Ich esse Pizza؟",
     options: [
       "1️⃣ Ich habe Pizza gegessen.",
       "2️⃣ Ich bin Pizza gegessen.",
@@ -194,11 +188,11 @@ const quizQuestions = [
   },
 
   {
-    question: "ما معنى **obwohl**؟",
+    question: "ما معنى obwohl؟",
     options: [
       "1️⃣ لأن",
       "2️⃣ إذا",
-      "3️⃣ رغم أن / بالرغم من أن",
+      "3️⃣ رغم أن",
       "4️⃣ قبل أن"
     ],
     answer: 3,
@@ -284,13 +278,11 @@ const exercises = [
 async function startQuiz(sock, jid, msg) {
 
   const userId = getUserId(msg);
-
   const userName = getUserName(msg);
 
   const randomIndex =
     Math.floor(
-      Math.random() *
-      quizQuestions.length
+      Math.random() * quizQuestions.length
     );
 
   const quiz =
@@ -305,9 +297,7 @@ async function startQuiz(sock, jid, msg) {
   activeQuizzes[jid][userId] = {
 
     answer: quiz.answer,
-
     level: quiz.level,
-
     type: "quiz"
 
   };
@@ -332,9 +322,7 @@ async function startQuiz(sock, jid, msg) {
         "\n\n" +
 
         "💡 أرسل رقم الإجابة فقط\n" +
-
-        "مثال: `2`"
-
+        "مثال: 2"
     }
   );
 
@@ -351,8 +339,7 @@ async function startExercise(sock, jid, msg) {
 
   const randomIndex =
     Math.floor(
-      Math.random() *
-      exercises.length
+      Math.random() * exercises.length
     );
 
   const exercise =
@@ -367,10 +354,14 @@ async function startExercise(sock, jid, msg) {
   activeQuizzes[jid][userId] = {
 
     answer: exercise.answer,
-
     type: "exercise"
 
   };
+
+
+  const score = getScore(userId);
+
+  score.exercises += 1;
 
 
   await sock.sendMessage(
@@ -384,7 +375,6 @@ async function startExercise(sock, jid, msg) {
         "\n\n" +
 
         "💡 أرسل رقم الإجابة فقط."
-
     }
   );
 
@@ -392,7 +382,7 @@ async function startExercise(sock, jid, msg) {
 
 
 // ==================================================
-// HANDLE QUIZ ANSWER
+// HANDLE ANSWER
 // ==================================================
 
 async function handleQuizAnswer(
@@ -416,16 +406,15 @@ async function handleQuizAnswer(
   }
 
 
-  const quiz =
-    activeQuizzes[jid][userId];
-
-
-  // يجب أن يكون رقمًا
   if (!/^[1-4]$/.test(text)) {
 
     return false;
 
   }
+
+
+  const quiz =
+    activeQuizzes[jid][userId];
 
 
   const selected =
@@ -436,10 +425,6 @@ async function handleQuizAnswer(
     getScore(userId);
 
 
-  // ------------------------------------------
-  // CORRECT
-  // ------------------------------------------
-
   if (
     selected === quiz.answer
   ) {
@@ -447,10 +432,6 @@ async function handleQuizAnswer(
     score.points += 10;
 
     score.correct += 1;
-
-
-    const level =
-      getLevel(score.points);
 
 
     await sock.sendMessage(
@@ -463,19 +444,13 @@ async function handleQuizAnswer(
 
           `⭐ نقاطك: ${score.points} XP\n` +
 
-          `🎯 مستواك: ${level}\n\n` +
+          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
 
-          "👏 أحسنت! استمر."
-
+          "👏 أحسنت!"
       }
     );
 
   }
-
-
-  // ------------------------------------------
-  // WRONG
-  // ------------------------------------------
 
   else {
 
@@ -495,7 +470,6 @@ async function handleQuizAnswer(
           `🎯 مستواك: ${getLevel(score.points)}\n\n` +
 
           "💪 حاول مرة أخرى!"
-
       }
     );
 
@@ -504,14 +478,13 @@ async function handleQuizAnswer(
 
   delete activeQuizzes[jid][userId];
 
-
   return true;
 
 }
 
 
 // ==================================================
-// POINTS MESSAGE
+// POINTS
 // ==================================================
 
 async function sendPoints(sock, jid, msg) {
@@ -524,6 +497,7 @@ async function sendPoints(sock, jid, msg) {
 
   const name =
     getUserName(msg);
+
 
   await sock.sendMessage(
     jid,
@@ -542,7 +516,6 @@ async function sendPoints(sock, jid, msg) {
         `❌ إجابات خاطئة: ${score.wrong}\n\n` +
 
         `📝 التمارين: ${score.exercises}`
-
     }
   );
 
@@ -718,10 +691,6 @@ async function askAI(question) {
   );
 
 
-  // ----------------------------------------------
-  // GROQ ERROR
-  // ----------------------------------------------
-
   if (!response.ok) {
 
     console.log(
@@ -742,10 +711,6 @@ async function askAI(question) {
   }
 
 
-  // ----------------------------------------------
-  // GET ANSWER
-  // ----------------------------------------------
-
   let answer = "";
 
 
@@ -758,10 +723,6 @@ async function askAI(question) {
 
   }
 
-
-  // ----------------------------------------------
-  // FALLBACK
-  // ----------------------------------------------
 
   if (
     !answer &&
@@ -807,10 +768,6 @@ async function askAI(question) {
   }
 
 
-  // ----------------------------------------------
-  // NO ANSWER
-  // ----------------------------------------------
-
   if (!answer) {
 
     console.log(
@@ -846,7 +803,7 @@ async function askAI(question) {
 
 
 // ==================================================
-// WHATSAPP
+// START WHATSAPP BOT
 // ==================================================
 
 async function startBot() {
@@ -858,9 +815,9 @@ async function startBot() {
     );
 
 
-    // ----------------------------------------------
+    // ==================================================
     // AUTH
-    // ----------------------------------------------
+    // ==================================================
 
     const {
       state,
@@ -871,9 +828,9 @@ async function startBot() {
       );
 
 
-    // ----------------------------------------------
-    // CREATE WHATSAPP CONNECTION
-    // ----------------------------------------------
+    // ==================================================
+    // WHATSAPP CONNECTION
+    // ==================================================
 
     const sock =
       makeWASocket({
@@ -896,9 +853,9 @@ async function startBot() {
       });
 
 
-    // ----------------------------------------------
+    // ==================================================
     // SAVE CREDENTIALS
-    // ----------------------------------------------
+    // ==================================================
 
     sock.ev.on(
       "creds.update",
@@ -906,9 +863,9 @@ async function startBot() {
     );
 
 
-    // ----------------------------------------------
+    // ==================================================
     // CONNECTION UPDATE
-    // ----------------------------------------------
+    // ==================================================
 
     sock.ev.on(
       "connection.update",
@@ -920,8 +877,6 @@ async function startBot() {
         } = update;
 
 
-        // CONNECTING
-
         if (
           connection === "connecting"
         ) {
@@ -932,8 +887,6 @@ async function startBot() {
 
         }
 
-
-        // CONNECTED
 
         if (
           connection === "open"
@@ -958,6 +911,10 @@ async function startBot() {
           );
 
           console.log(
+            "💲 AI responds only to messages starting with $"
+          );
+
+          console.log(
             "======================================"
           );
 
@@ -965,8 +922,6 @@ async function startBot() {
 
         }
 
-
-        // DISCONNECTED
 
         if (
           connection === "close"
@@ -989,7 +944,9 @@ async function startBot() {
 
             }
 
-          } catch (e) {
+          }
+
+          catch (e) {
 
             console.log(
               "⚠️ Could not read disconnect code."
@@ -1003,8 +960,6 @@ async function startBot() {
             code
           );
 
-
-          // LOGGED OUT
 
           if (
             code ===
@@ -1023,8 +978,6 @@ async function startBot() {
 
           }
 
-
-          // RECONNECT
 
           console.log(
             "🔄 Reconnecting in 5 seconds..."
@@ -1114,7 +1067,9 @@ async function startBot() {
 
         console.log("");
 
-      } catch (error) {
+      }
+
+      catch (error) {
 
         console.log(
           "❌ Pairing error:",
@@ -1141,19 +1096,14 @@ async function startBot() {
           try {
 
             // ------------------------------------------
-            // BASIC CHECK
+            // BASIC CHECKS
             // ------------------------------------------
 
             if (!msg) continue;
 
             if (!msg.message) continue;
 
-
-            // لا يرد على رسائله الخاصة
-
-            if (
-              msg.key.fromMe
-            ) continue;
+            if (msg.key.fromMe) continue;
 
 
             const jid =
@@ -1177,7 +1127,7 @@ async function startBot() {
 
 
             // ------------------------------------------
-            // GET TEXT
+            // GET MESSAGE TEXT
             // ------------------------------------------
 
             let text = "";
@@ -1192,7 +1142,6 @@ async function startBot() {
 
             }
 
-
             else if (
               msg.message
                 .extendedTextMessage
@@ -1205,7 +1154,6 @@ async function startBot() {
                   .text;
 
             }
-
 
             else if (
               msg.message
@@ -1221,7 +1169,6 @@ async function startBot() {
                   .conversation;
 
             }
-
 
             else if (
               msg.message
@@ -1248,9 +1195,9 @@ async function startBot() {
             if (!question) continue;
 
 
-            // ------------------------------------------
+            // ==================================================
             // LOG
-            // ------------------------------------------
+            // ==================================================
 
             console.log("");
 
@@ -1261,7 +1208,160 @@ async function startBot() {
 
 
             // ==================================================
-            // CHECK ACTIVE QUIZ ANSWER
+            // COMMANDS - WORK WITHOUT $
+            // ==================================================
+
+            // ----------------------------------------------
+            // TEST
+            // ----------------------------------------------
+
+            if (
+              question.toLowerCase() ===
+              "!test"
+            ) {
+
+              await sock.sendMessage(
+                jid,
+                {
+                  text:
+                    "🇩🇪🤖 German B1 Bot\n\n" +
+                    "✅ البوت يعمل بشكل صحيح!\n" +
+                    "🧠 Groq AI متصل.\n" +
+                    "🎯 نظام المسابقات يعمل."
+                }
+              );
+
+
+              continue;
+
+            }
+
+
+            // ----------------------------------------------
+            // HELP
+            // ----------------------------------------------
+
+            if (
+              question.toLowerCase() ===
+              "!help"
+            ) {
+
+              await sock.sendMessage(
+                jid,
+                {
+                  text:
+                    "🇩🇪🤖 *German B1 AI Bot*\n\n" +
+
+                    "🎯 !quiz\n" +
+                    "ابدأ مسابقة واحصل على نقاط.\n\n" +
+
+                    "📝 !exercise\n" +
+                    "ابدأ تمريناً.\n\n" +
+
+                    "⭐ !points\n" +
+                    "شاهد نقاطك ومستواك.\n\n" +
+
+                    "🏆 !ranking\n" +
+                    "شاهد ترتيب الأعضاء.\n\n" +
+
+                    "💲 للذكاء الاصطناعي يجب أن تبدأ الرسالة بـ $.\n\n" +
+
+                    "مثال:\n" +
+                    "$Was bedeutet gehen?"
+                }
+              );
+
+
+              continue;
+
+            }
+
+
+            // ----------------------------------------------
+            // QUIZ
+            // ----------------------------------------------
+
+            if (
+              question.toLowerCase() ===
+              "!quiz"
+            ) {
+
+              await startQuiz(
+                sock,
+                jid,
+                msg
+              );
+
+
+              continue;
+
+            }
+
+
+            // ----------------------------------------------
+            // EXERCISE
+            // ----------------------------------------------
+
+            if (
+              question.toLowerCase() ===
+              "!exercise"
+            ) {
+
+              await startExercise(
+                sock,
+                jid,
+                msg
+              );
+
+
+              continue;
+
+            }
+
+
+            // ----------------------------------------------
+            // POINTS
+            // ----------------------------------------------
+
+            if (
+              question.toLowerCase() ===
+              "!points"
+            ) {
+
+              await sendPoints(
+                sock,
+                jid,
+                msg
+              );
+
+
+              continue;
+
+            }
+
+
+            // ----------------------------------------------
+            // RANKING
+            // ----------------------------------------------
+
+            if (
+              question.toLowerCase() ===
+              "!ranking"
+            ) {
+
+              await sendRanking(
+                sock,
+                jid
+              );
+
+
+              continue;
+
+            }
+
+
+            // ==================================================
+            // QUIZ ANSWER
             // ==================================================
 
             if (
@@ -1287,36 +1387,16 @@ async function startBot() {
 
 
             // ==================================================
-            // TEST COMMAND
+            // AI ONLY WHEN MESSAGE STARTS WITH $
             // ==================================================
 
             if (
-              question.toLowerCase() ===
-              "!test"
+              !question.startsWith("$")
             ) {
-
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-                    "🇩🇪🤖 German B1 Bot\n\n" +
-
-                    "✅ البوت يعمل بشكل صحيح!\n" +
-
-                    "🧠 Groq AI متصل.\n\n" +
-
-                    "🎯 نظام المسابقات يعمل.\n\n" +
-
-                    "اكتب !quiz للبدء."
-
-                }
-              );
-
 
               console.log(
-                "✅ Test message sent."
+                "⏭️ Message ignored - no $ prefix"
               );
-
 
               continue;
 
@@ -1324,122 +1404,20 @@ async function startBot() {
 
 
             // ==================================================
-            // HELP COMMAND
+            // REMOVE $
             // ==================================================
 
-            if (
-              question.toLowerCase() ===
-              "!help"
-            ) {
+            const aiQuestion =
+              question
+                .slice(1)
+                .trim();
 
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-                    "🇩🇪🤖 *German B1 AI Bot*\n\n" +
 
-                    "🎯 *أوامر التعلم:*\n\n" +
+            if (!aiQuestion) {
 
-                    "🎯 !quiz\n" +
-                    "ابدأ سؤالًا واحصل على نقاط.\n\n" +
-
-                    "📝 !exercise\n" +
-                    "ابدأ تمرينًا.\n\n" +
-
-                    "⭐ !points\n" +
-                    "شاهد نقاطك ومستواك.\n\n" +
-
-                    "🏆 !ranking\n" +
-                    "شاهد ترتيب الأعضاء.\n\n" +
-
-                    "💡 ويمكنك أيضًا طرح أي سؤال للألمانية مباشرة."
-
-                }
+              console.log(
+                "⏭️ Empty AI question."
               );
-
-
-              continue;
-
-            }
-
-
-            // ==================================================
-            // QUIZ
-            // ==================================================
-
-            if (
-              question.toLowerCase() ===
-              "!quiz"
-            ) {
-
-              await startQuiz(
-                sock,
-                jid,
-                msg
-              );
-
-
-              continue;
-
-            }
-
-
-            // ==================================================
-            // EXERCISE
-            // ==================================================
-
-            if (
-              question.toLowerCase() ===
-              "!exercise"
-            ) {
-
-              await startExercise(
-                sock,
-                jid,
-                msg
-              );
-
-
-              continue;
-
-            }
-
-
-            // ==================================================
-            // POINTS
-            // ==================================================
-
-            if (
-              question.toLowerCase() ===
-              "!points"
-            ) {
-
-              await sendPoints(
-                sock,
-                jid,
-                msg
-              );
-
-
-              continue;
-
-            }
-
-
-            // ==================================================
-            // RANKING
-            // ==================================================
-
-            if (
-              question.toLowerCase() ===
-              "!ranking"
-            ) {
-
-              await sendRanking(
-                sock,
-                jid
-              );
-
 
               continue;
 
@@ -1454,20 +1432,21 @@ async function startBot() {
               "🤖 Sending to AI..."
             );
 
+            console.log(
+              "❓ AI Question:",
+              aiQuestion
+            );
 
-            // ------------------------------------------
-            // ASK AI
-            // ------------------------------------------
 
             const answer =
               await askAI(
-                question
+                aiQuestion
               );
 
 
-            // ------------------------------------------
+            // ==================================================
             // SEND ANSWER
-            // ------------------------------------------
+            // ==================================================
 
             await sock.sendMessage(
               jid,
@@ -1485,10 +1464,6 @@ async function startBot() {
 
           }
 
-
-          // ==================================================
-          // MESSAGE ERROR
-          // ==================================================
 
           catch (error) {
 
@@ -1509,8 +1484,9 @@ async function startBot() {
                 }
               );
 
+            }
 
-            } catch (sendError) {
+            catch (sendError) {
 
               console.log(
                 "❌ Could not send error message:",
@@ -1530,7 +1506,7 @@ async function startBot() {
 
 
   // ==================================================
-  // START ERROR
+  // BOT START ERROR
   // ==================================================
 
   catch (error) {
