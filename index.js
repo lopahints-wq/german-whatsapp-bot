@@ -29,10 +29,9 @@ app.listen(PORT, () => {
 
 
 // ==========================================
-// OPENAI
+// GROQ AI
 // ==========================================
 
-async function askAI(question) {
 async function askAI(question) {
 
   const apiKey = process.env.GROQ_API_KEY;
@@ -55,24 +54,38 @@ async function askAI(question) {
       },
 
       body: JSON.stringify({
-
         model: "openai/gpt-oss-20b",
 
         instructions:
-          "أنت مساعد ذكاء اصطناعي داخل WhatsApp. " +
-          "أنت مدرس لغة ألمانية من مستوى A1 إلى B1، " +
-          "لكن يمكنك الإجابة عن أي سؤال يطرحه المستخدم. " +
-          "إذا كان السؤال متعلقًا بالألمانية، ساعد المستخدم على التعلم. " +
-          "إذا كتب المستخدم بالألمانية، صحح أخطاءه واشرحها بالعربية باختصار. " +
-          "إذا كتب بالعربية، أعطه الألمانية المناسبة مع أمثلة عند الحاجة. " +
-          "أجب بشكل واضح ومختصر ومناسب لرسائل WhatsApp.",
+          "أنت مساعد ذكاء اصطناعي داخل مجموعة WhatsApp لتعلم اللغة الألمانية. " +
+          "أنت مدرس لغة ألمانية من مستوى A1 إلى B1. " +
+          "يمكنك أيضًا الإجابة عن الأسئلة العامة إذا كانت مناسبة. " +
+
+          "إذا كتب المستخدم جملة بالألمانية، صحح أخطاءه واشرح التصحيح بالعربية باختصار. " +
+
+          "إذا سأل المستخدم عن كلمة ألمانية، أعطه: " +
+          "المعنى بالعربية، النطق إن كان مفيدًا، مثالًا بالألمانية، وترجمته بالعربية. " +
+
+          "إذا كتب المستخدم بالعربية ويريد ترجمتها إلى الألمانية، أعطه ترجمة طبيعية مناسبة لمستوى A1-B1. " +
+
+          "إذا سأل عن قاعدة ألمانية، اشرحها بطريقة بسيطة مع أمثلة. " +
+
+          "لا تجعل الإجابة طويلة جدًا لأن الرسالة ستُرسل داخل WhatsApp. " +
+          "استخدم العربية في الشرح، والألمانية في الأمثلة. " +
+          "كن ودودًا ومفيدًا.",
 
         input: question
       })
     }
   );
 
+
   const data = await response.json();
+
+
+  // ==========================================
+  // ERROR FROM GROQ
+  // ==========================================
 
   if (!response.ok) {
 
@@ -85,11 +98,14 @@ async function askAI(question) {
     );
   }
 
-  return (
+
+  // ==========================================
+  // GET AI ANSWER
+  // ==========================================
+
+  const answer =
     data.output_text ||
-    "❌ لم أستطع إنشاء إجابة."
-  );
-}
+    "❌ لم أستطع إنشاء إجابة.";
 
   return answer;
 }
@@ -120,10 +136,6 @@ async function startBot() {
       logger: pino({
         level: "silent"
       }),
-
-      // ======================================
-      // CHROME - macOS
-      // ======================================
 
       browser: Browsers.macOS("Chrome"),
 
@@ -230,9 +242,7 @@ async function startBot() {
 
 
           setTimeout(() => {
-
             startBot();
-
           }, 5000);
 
         }
@@ -345,6 +355,7 @@ async function startBot() {
 
             if (!msg.message) continue;
 
+
             // لا يرد على نفسه
             if (msg.key.fromMe) continue;
 
@@ -361,9 +372,7 @@ async function startBot() {
             // ==================================
 
             if (!jid.endsWith("@g.us")) {
-
               continue;
-
             }
 
 
@@ -387,6 +396,7 @@ async function startBot() {
 
 
             console.log("");
+
             console.log(
               "📩 GROUP MESSAGE:",
               cleanText
@@ -411,9 +421,11 @@ async function startBot() {
                 }
               );
 
+
               console.log(
                 "✅ Test message sent."
               );
+
 
               continue;
             }
@@ -433,12 +445,19 @@ async function startBot() {
                   text:
                     "🇩🇪🤖 German B1 AI Bot\n\n" +
                     "يمكنك الآن كتابة أي سؤال مباشرة.\n\n" +
+
                     "مثال:\n" +
                     "ما معنى كلمة gehen؟\n\n" +
+
                     "أو:\n" +
-                    "Hallo, wie geht es dir?"
+                    "Hallo, wie geht es dir?\n\n" +
+
+                    "أو:\n" +
+                    "صحح هذه الجملة:\n" +
+                    "Ich habe gestern nach Berlin gefahren."
                 }
               );
+
 
               continue;
             }
@@ -462,7 +481,10 @@ async function startBot() {
             );
 
 
-            // إرسال السؤال إلى OpenAI
+            // ==================================
+            // SEND QUESTION TO AI
+            // ==================================
+
             const answer =
               await askAI(cleanText);
 
@@ -507,7 +529,7 @@ async function startBot() {
                 {
                   text:
                     "❌ حدث خطأ أثناء معالجة السؤال.\n\n" +
-                    "تحقق من OPENAI_API_KEY ثم راجع Logs."
+                    "راجع Logs في Render."
                 }
               );
 
