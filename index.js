@@ -29,30 +29,43 @@ app.listen(PORT, () => {
 
 
 // ============================================================
-// SETTINGS
+// CONFIGURATION
 // ============================================================
 
-// المجموعتان اللتان تريد البوت أن يعمل فيهما فقط
+// تمرين كل دقيقة
+const EXERCISE_INTERVAL = 60 * 1000;
+
+// المجموعتان المسموح لهما باستقبال التمارين
 const ALLOWED_GROUPS = [
   "120363410722950290@g.us",
   "120363423888719176@g.us"
 ];
-
-// كل كم دقيقة يرسل تمريناً تلقائياً
-const EXERCISE_INTERVAL = 5 * 60 * 1000;
 
 
 // ============================================================
 // GLOBAL STATE
 // ============================================================
 
+// نقاط الأعضاء
 const scores = {};
+
+// التمرين الحالي لكل مجموعة
 const activeExercises = {};
 
+// منع إعطاء نفس العضو نقاطاً عدة مرات على نفس السؤال
+const answeredUsers = {};
+
+// منع تشغيل أكثر من مؤقت
+let exerciseTimer = null;
+
+// منع إنشاء أكثر من Socket
 let sock = null;
-let reconnectTimer = null;
-let reconnecting = false;
-let autoExerciseStarted = false;
+
+// منع تشغيل أكثر من اتصال في نفس الوقت
+let startingBot = false;
+
+// لمنع إنشاء تمرين جديد إذا كان التمرين السابق ما زال قيد الإنشاء
+const exerciseGenerating = {};
 
 
 // ============================================================
@@ -60,10 +73,12 @@ let autoExerciseStarted = false;
 // ============================================================
 
 function getUserId(msg) {
+
   return (
     msg.key.participant ||
     msg.key.remoteJid
   );
+
 }
 
 
@@ -72,10 +87,12 @@ function getUserId(msg) {
 // ============================================================
 
 function getUserName(msg) {
+
   return (
     msg.pushName ||
     "عضو"
   );
+
 }
 
 
@@ -98,6 +115,7 @@ function getLevel(points) {
   }
 
   return "A1 🟢";
+
 }
 
 
@@ -119,87 +137,98 @@ function getScore(userId) {
   }
 
   return scores[userId];
+
 }
 
 
 // ============================================================
-// GROQ AI
+// AI REQUEST
 // ============================================================
 
 async function askAI(question) {
 
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey =
+    process.env.GROQ_API_KEY;
 
   if (!apiKey) {
+
     throw new Error(
       "GROQ_API_KEY is missing in Render."
     );
+
   }
 
-  console.log("🧠 Sending to Groq...");
-  console.log("❓", question);
+  console.log("🧠 Sending request to Groq...");
 
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/responses",
-    {
-      method: "POST",
+  const response =
+    await fetch(
+      "https://api.groq.com/openai/v1/responses",
+      {
+        method: "POST",
 
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
 
-      body: JSON.stringify({
+        body: JSON.stringify({
 
-        model: "openai/gpt-oss-20b",
+          model: "openai/gpt-oss-20b",
 
-        instructions: `
+          instructions: `
 أنت مدرس لغة ألمانية محترف داخل مجموعة WhatsApp.
 
-مهمتك مساعدة المستخدمين على تعلم الألمانية من A1 إلى B1.
+مهمتك مساعدة الأعضاء في تعلم الألمانية من A1 إلى B1.
 
-القواعد:
+إذا كان المطلوب تمريناً، يجب أن تعيد JSON فقط بهذا الشكل:
 
-- إذا كتب المستخدم جملة ألمانية:
-صحح الجملة واشرح الخطأ بالعربية.
+{
+  "level": "A1",
+  "question": "🇩🇪 اختر الإجابة الصحيحة:\\n\\nIch ___ Deutsch.",
+  "options": [
+    "spreche",
+    "sprichst",
+    "sprechen"
+  ],
+  "answer": 1,
+  "explanation": "مع ich نستخدم spreche."
+}
 
-- إذا كتب كلمة ألمانية:
-اشرح معناها وأعط مثالاً بالألمانية مع الترجمة.
+القواعد الخاصة بالتمارين:
 
-- إذا كتب بالعربية وطلب ترجمة:
-أعطه ترجمة ألمانية طبيعية.
+- يجب أن يكون هناك 3 اختيارات فقط.
+- answer يجب أن يكون 1 أو 2 أو 3.
+- السؤال يجب أن يكون صحيحاً لغوياً.
+- اختر مستوى A1 أو A2 أو B1.
+- لا تجعل الإجابة الصحيحة دائماً رقم 1.
+- غيّر موضع الإجابة الصحيحة عشوائياً.
+- اجعل السؤال مناسباً للمستوى.
+- استخدم الألمانية في السؤال والاختيارات.
+- استخدم العربية في الشرح.
+- لا تستخدم Markdown خارج JSON.
+- لا تضف أي كلام قبل أو بعد JSON.
 
-- إذا سأل عن قاعدة:
-اشرحها بالعربية بشكل بسيط مع أمثلة ألمانية.
-
-- إذا طلب تمريناً:
-أنشئ تمريناً مناسباً لمستواه.
-
-- إذا طلب اختباراً:
-أنشئ سؤالاً مناسباً.
-
-- إذا كان السؤال عاماً:
+إذا كان السؤال عادياً وليس تمريناً:
 أجب بشكل طبيعي.
-
 استخدم العربية للشرح والألمانية للأمثلة.
-
-لا تكن طويلاً جداً.
-
-كن واضحاً وودوداً.
 `,
 
-        input: question
+          input: question
 
-      })
-    }
-  );
+        })
+      }
+    );
 
-  const data = await response.json();
+
+  const data =
+    await response.json();
+
 
   console.log(
     "📦 Groq status:",
     response.status
   );
+
 
   if (!response.ok) {
 
@@ -212,9 +241,12 @@ async function askAI(question) {
       data?.error?.message ||
       "Groq API request failed."
     );
+
   }
 
+
   let answer = "";
+
 
   if (
     typeof data.output_text === "string"
@@ -225,19 +257,24 @@ async function askAI(question) {
 
   }
 
+
   if (
     !answer &&
     Array.isArray(data.output)
   ) {
 
-    for (const item of data.output) {
+    for (
+      const item of data.output
+    ) {
 
       if (
         item?.type === "message" &&
         Array.isArray(item.content)
       ) {
 
-        for (const content of item.content) {
+        for (
+          const content of item.content
+        ) {
 
           if (
             content?.type === "output_text" &&
@@ -248,28 +285,31 @@ async function askAI(question) {
               content.text.trim();
 
             break;
+
           }
 
         }
+
       }
 
       if (answer) break;
+
     }
+
   }
+
 
   if (!answer) {
 
     throw new Error(
       "Groq returned an empty answer."
     );
+
   }
 
-  console.log(
-    "🤖 AI:",
-    answer
-  );
 
   return answer;
+
 }
 
 
@@ -279,340 +319,228 @@ async function askAI(question) {
 
 async function createAIExercise() {
 
-  const apiKey = process.env.GROQ_API_KEY;
-
-  if (!apiKey) {
-    throw new Error(
-      "GROQ_API_KEY is missing."
-    );
-  }
-
   console.log("");
   console.log("======================================");
   console.log("🧠 Creating AI exercise...");
   console.log("======================================");
 
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/responses",
-    {
-      method: "POST",
+  const raw =
+    await askAI(
+      "أنشئ تمريناً جديداً في اللغة الألمانية."
+    );
 
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
 
-      body: JSON.stringify({
+  console.log("🤖 AI RAW:");
+  console.log(raw);
 
-        model: "openai/gpt-oss-20b",
 
-        instructions: `
-أنت مدرس لغة ألمانية.
+  let clean =
+    raw
+      .replace(/```json/gi, "")
+      .replace(/```/g, "")
+      .trim();
 
-أنشئ تمريناً واحداً في اللغة الألمانية.
 
-المستوى يمكن أن يكون A1 أو A2 أو B1.
+  let exercise;
 
-مهم جداً:
 
-يجب أن يكون السؤال اختيار من متعدد.
+  try {
 
-يجب أن يحتوي على 3 اختيارات فقط.
+    exercise =
+      JSON.parse(clean);
 
-يجب أن تكون إجابة واحدة صحيحة فقط.
+  }
 
-يجب أن يكون السؤال مفيداً لتعلم الألمانية.
-
-اكتب النتيجة بهذا الشكل EXACTLY:
-
-LEVEL: A1
-
-QUESTION:
-🇩🇪 اختر الإجابة الصحيحة:
-
-Das Auto ___ schnell.
-
-OPTIONS:
-1|fährt
-2|fahren
-3|fährst
-
-ANSWER:
-1
-
-EXPLANATION:
-شرح قصير بالعربية.
-
-لا تضف أي شيء آخر.
-`,
-
-        input:
-          "أنشئ تمريناً جديداً ومختلفاً."
-      })
-    }
-  );
-
-  const data = await response.json();
-
-  console.log(
-    "📦 Groq status:",
-    response.status
-  );
-
-  if (!response.ok) {
+  catch (error) {
 
     console.log(
-      JSON.stringify(data, null, 2)
+      "⚠️ AI JSON parsing failed."
     );
 
-    throw new Error(
-      data?.error?.message ||
-      "Groq exercise request failed."
-    );
-  }
+    // محاولة استخراج JSON
+    const start =
+      clean.indexOf("{");
 
-  let text = "";
+    const end =
+      clean.lastIndexOf("}");
 
-  if (
-    typeof data.output_text === "string"
-  ) {
+    if (
+      start !== -1 &&
+      end !== -1
+    ) {
 
-    text =
-      data.output_text.trim();
+      const jsonText =
+        clean.slice(
+          start,
+          end + 1
+        );
 
-  }
+      exercise =
+        JSON.parse(jsonText);
 
-  if (
-    !text &&
-    Array.isArray(data.output)
-  ) {
-
-    for (const item of data.output) {
-
-      if (
-        item?.type === "message" &&
-        Array.isArray(item.content)
-      ) {
-
-        for (const content of item.content) {
-
-          if (
-            content?.type === "output_text" &&
-            typeof content.text === "string"
-          ) {
-
-            text =
-              content.text.trim();
-
-            break;
-          }
-        }
-      }
-
-      if (text) break;
     }
-  }
 
-  if (!text) {
-    throw new Error(
-      "AI exercise is empty."
-    );
-  }
+    else {
 
-  return parseExercise(text);
-}
-
-
-// ============================================================
-// PARSE AI EXERCISE
-// ============================================================
-
-function parseExercise(text) {
-
-  console.log("🤖 AI EXERCISE:");
-  console.log(text);
-
-  const levelMatch =
-    text.match(
-      /LEVEL:\s*(A1|A2|B1)/i
-    );
-
-  const questionMatch =
-    text.match(
-      /QUESTION:\s*([\s\S]*?)\s*OPTIONS:/i
-    );
-
-  const optionsMatch =
-    text.match(
-      /OPTIONS:\s*([\s\S]*?)\s*ANSWER:/i
-    );
-
-  const answerMatch =
-    text.match(
-      /ANSWER:\s*([123])/i
-    );
-
-  const explanationMatch =
-    text.match(
-      /EXPLANATION:\s*([\s\S]*)/i
-    );
-
-
-  if (
-    !questionMatch ||
-    !optionsMatch ||
-    !answerMatch
-  ) {
-
-    throw new Error(
-      "Could not parse AI exercise."
-    );
-  }
-
-
-  const level =
-    levelMatch
-      ? levelMatch[1].toUpperCase()
-      : "A1";
-
-
-  const question =
-    questionMatch[1].trim();
-
-
-  const optionLines =
-    optionsMatch[1]
-      .split("\n")
-      .map(x => x.trim())
-      .filter(Boolean);
-
-
-  const options = [];
-
-
-  for (const line of optionLines) {
-
-    const match =
-      line.match(
-        /^([123])\s*\|\s*(.+)$/
+      throw new Error(
+        "AI returned invalid exercise JSON."
       );
 
-    if (match) {
-
-      options.push({
-        number:
-          Number(match[1]),
-
-        text:
-          match[2].trim()
-      });
-
     }
 
   }
 
 
-  if (options.length !== 3) {
-
-    throw new Error(
-      "AI did not return exactly 3 options."
-    );
-  }
-
-
-  const answer =
-    Number(answerMatch[1]);
-
+  // ==========================================================
+  // VALIDATION
+  // ==========================================================
 
   if (
-    answer < 1 ||
-    answer > 3
+    !exercise.level ||
+    !exercise.question ||
+    !Array.isArray(exercise.options) ||
+    exercise.options.length !== 3 ||
+    ![1, 2, 3].includes(
+      Number(exercise.answer)
+    )
   ) {
 
     throw new Error(
-      "Invalid AI answer."
+      "AI exercise format is invalid."
     );
+
   }
 
 
-  const explanation =
-    explanationMatch
-      ? explanationMatch[1].trim()
-      : "";
+  exercise.answer =
+    Number(exercise.answer);
 
 
-  return {
+  console.log(
+    "📚 LEVEL:",
+    exercise.level
+  );
 
-    level,
+  console.log(
+    "❓ QUESTION:",
+    exercise.question
+  );
 
-    question,
+  console.log(
+    "1️⃣",
+    exercise.options[0]
+  );
 
-    options,
+  console.log(
+    "2️⃣",
+    exercise.options[1]
+  );
 
-    answer,
+  console.log(
+    "3️⃣",
+    exercise.options[2]
+  );
 
-    explanation
+  console.log(
+    "✅ ANSWER:",
+    exercise.answer
+  );
 
-  };
+  return exercise;
+
 }
 
 
 // ============================================================
-// SEND AI EXERCISE
+// FORMAT EXERCISE
+// ============================================================
+
+function formatExercise(exercise) {
+
+  return (
+    "📝🇩🇪 *German AI Exercise*\n\n" +
+
+    `📚 المستوى: *${exercise.level}*\n\n` +
+
+    `${exercise.question}\n\n` +
+
+    `1️⃣ ${exercise.options[0]}\n` +
+    `2️⃣ ${exercise.options[1]}\n` +
+    `3️⃣ ${exercise.options[2]}\n\n` +
+
+    "💡 أرسل رقم الإجابة فقط\n" +
+    "مثال: 2"
+  );
+
+}
+
+
+// ============================================================
+// SEND AI EXERCISE TO GROUP
 // ============================================================
 
 async function sendAIExercise(jid) {
 
-  if (!sock) {
+  if (!sock) return;
+
+
+  if (
+    exerciseGenerating[jid]
+  ) {
 
     console.log(
-      "⚠️ Cannot send exercise - socket unavailable."
+      "⏭️ Exercise already generating:",
+      jid
     );
 
     return;
+
   }
 
 
-  console.log(
-    `📝 Creating exercise for ${jid}`
-  );
+  exerciseGenerating[jid] = true;
 
 
   try {
+
+    console.log(
+      `📚 Creating exercise for ${jid}`
+    );
+
 
     const exercise =
       await createAIExercise();
 
 
-    activeExercises[jid] = exercise;
+    // حفظ السؤال للمجموعة
+    activeExercises[jid] = {
+
+      answer:
+        exercise.answer,
+
+      level:
+        exercise.level,
+
+      explanation:
+        exercise.explanation ||
+        "أحسنت! حاول فهم سبب صحة الإجابة.",
+
+      createdAt:
+        Date.now()
+
+    };
 
 
-    let message =
-      "📝🇩🇪 *German AI Exercise*\n\n";
-
-    message +=
-      `📚 المستوى: ${exercise.level}\n\n`;
-
-    message +=
-      `${exercise.question}\n\n`;
-
-    message +=
-      `1️⃣ ${exercise.options[0].text}\n`;
-
-    message +=
-      `2️⃣ ${exercise.options[1].text}\n`;
-
-    message +=
-      `3️⃣ ${exercise.options[2].text}\n\n`;
-
-    message +=
-      "💡 أرسل 1 أو 2 أو 3 فقط";
+    // قائمة الأعضاء الذين أجابوا
+    answeredUsers[jid] =
+      new Set();
 
 
     await sock.sendMessage(
       jid,
       {
-        text: message
+        text:
+          formatExercise(exercise)
       }
     );
 
@@ -626,33 +554,41 @@ async function sendAIExercise(jid) {
   catch (error) {
 
     console.log(
-      "❌ Exercise error:",
+      `❌ Exercise error for ${jid}:`,
       error.message
     );
 
   }
+
+  finally {
+
+    exerciseGenerating[jid] = false;
+
+  }
+
 }
 
 
 // ============================================================
-// SEND AUTOMATIC EXERCISES
+// SEND EXERCISES TO ALL GROUPS
 // ============================================================
 
-async function sendAutomaticExercises() {
+async function sendExercisesToAllGroups() {
 
   if (!sock) {
 
     console.log(
-      "⏭️ Auto exercise skipped - no socket."
+      "⏭️ Cannot send exercises - WhatsApp not connected."
     );
 
     return;
+
   }
 
 
   console.log("");
   console.log(
-    "⏰ Automatic exercise starting..."
+    "⏰ Automatic exercise cycle..."
   );
 
 
@@ -660,20 +596,7 @@ async function sendAutomaticExercises() {
     const jid of ALLOWED_GROUPS
   ) {
 
-    try {
-
-      await sendAIExercise(jid);
-
-    }
-
-    catch (error) {
-
-      console.log(
-        `❌ Could not send to ${jid}:`,
-        error.message
-      );
-
-    }
+    await sendAIExercise(jid);
 
   }
 
@@ -681,22 +604,20 @@ async function sendAutomaticExercises() {
 
 
 // ============================================================
-// START AUTO EXERCISES
+// START AUTOMATIC EXERCISES
 // ============================================================
 
-function startAutomaticExercises() {
+function startExerciseTimer() {
 
-  if (autoExerciseStarted) {
+  if (exerciseTimer) {
 
     console.log(
-      "⏭️ Automatic exercises already running."
+      "⏭️ Exercise timer already running."
     );
 
     return;
+
   }
-
-
-  autoExerciseStarted = true;
 
 
   console.log("");
@@ -705,27 +626,25 @@ function startAutomaticExercises() {
   );
 
   console.log(
-    "⏰ Interval: every 5 minutes."
-  );
-
-  console.log(
-    `👥 Groups: ${ALLOWED_GROUPS.length}`
+    "⏰ Interval: every 1 minute."
   );
 
 
-  setInterval(
-    async () => {
+  exerciseTimer =
+    setInterval(
+      async () => {
 
-      await sendAutomaticExercises();
+        await sendExercisesToAllGroups();
 
-    },
-    EXERCISE_INTERVAL
-  );
+      },
+      EXERCISE_INTERVAL
+    );
+
 }
 
 
 // ============================================================
-// HANDLE EXERCISE ANSWER
+// ANSWER EXERCISE
 // ============================================================
 
 async function handleExerciseAnswer(
@@ -739,31 +658,68 @@ async function handleExerciseAnswer(
   ) {
 
     return false;
+
   }
 
 
   if (
-    !/^[123]$/.test(text)
+    !/^[1-3]$/.test(text)
   ) {
 
     return false;
+
   }
-
-
-  const exercise =
-    activeExercises[jid];
-
-
-  const selected =
-    Number(text);
 
 
   const userId =
     getUserId(msg);
 
+  const userName =
+    getUserName(msg);
+
+
+  if (
+    !answeredUsers[jid]
+  ) {
+
+    answeredUsers[jid] =
+      new Set();
+
+  }
+
+
+  // الشخص أجاب مسبقاً
+  if (
+    answeredUsers[jid].has(userId)
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          `ℹ️ ${userName}، لقد أجبت على هذا التمرين بالفعل.`
+      }
+    );
+
+    return true;
+
+  }
+
+
+  answeredUsers[jid].add(userId);
+
+
+  const selected =
+    Number(text);
+
+  const exercise =
+    activeExercises[jid];
 
   const score =
     getScore(userId);
+
+
+  score.exercises += 1;
 
 
   if (
@@ -780,11 +736,15 @@ async function handleExerciseAnswer(
         text:
           "✅ *إجابة صحيحة!* 🎉\n\n" +
 
-          "⭐ +10 XP\n" +
+          "⭐ +10 XP\n\n" +
+
+          `👤 ${userName}\n` +
 
           `⭐ نقاطك: ${score.points} XP\n` +
 
-          `🎯 مستواك: ${getLevel(score.points)}`
+          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
+
+          `📚 ${exercise.explanation}`
       }
     );
 
@@ -801,23 +761,23 @@ async function handleExerciseAnswer(
         text:
           "❌ *إجابة خاطئة*\n\n" +
 
-          `الإجابة الصحيحة: ${exercise.answer}️⃣\n\n` +
+          `👤 ${userName}\n\n` +
 
-          `${exercise.explanation}\n\n` +
+          `الإجابة الصحيحة هي: *${exercise.answer}*️⃣\n\n` +
 
           `⭐ نقاطك: ${score.points} XP\n` +
 
-          `🎯 مستواك: ${getLevel(score.points)}`
+          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
+
+          `📚 ${exercise.explanation}`
       }
     );
 
   }
 
 
-  delete activeExercises[jid];
-
-
   return true;
+
 }
 
 
@@ -844,7 +804,7 @@ async function sendPoints(
     jid,
     {
       text:
-        "⭐ *نقاطك في German Bot*\n\n" +
+        "⭐ *German B1 Bot - نقاطك*\n\n" +
 
         `👤 ${name}\n\n` +
 
@@ -859,14 +819,15 @@ async function sendPoints(
         `📝 التمارين: ${score.exercises}`
     }
   );
+
 }
 
 
 // ============================================================
-// RANK
+// RANKING
 // ============================================================
 
-async function sendRank(jid) {
+async function sendRanking(jid) {
 
   const users =
     Object.entries(scores);
@@ -878,12 +839,12 @@ async function sendRank(jid) {
       jid,
       {
         text:
-          "🏆 لا توجد نقاط بعد.\n\n" +
-          "ابدأ بحل التمارين."
+          "🏆 لا توجد نقاط بعد."
       }
     );
 
     return;
+
   }
 
 
@@ -899,7 +860,7 @@ async function sendRank(jid) {
 
 
   let message =
-    "🏆🇩🇪 *German Ranking*\n\n";
+    "🏆🇩🇪 *German B1 Ranking*\n\n";
 
 
   top.forEach(
@@ -917,8 +878,8 @@ async function sendRank(jid) {
 
       message +=
         `${medal} ${userId.split("@")[0]}\n` +
-
-        `⭐ ${score.points} XP — ${getLevel(score.points)}\n\n`;
+        `⭐ ${score.points} XP\n` +
+        `🎯 ${getLevel(score.points)}\n\n`;
 
     }
   );
@@ -930,25 +891,48 @@ async function sendRank(jid) {
       text: message
     }
   );
+
 }
 
 
 // ============================================================
-// MANUAL EXERCISE
+// HELP
 // ============================================================
 
-async function manualExercise(jid, msg) {
+async function sendHelp(jid) {
 
-  const userId =
-    getUserId(msg);
+  await sock.sendMessage(
+    jid,
+    {
+      text:
+        "🇩🇪🤖 *German B1 AI Bot*\n\n" +
 
-  const score =
-    getScore(userId);
+        "🧠 الذكاء الاصطناعي:\n" +
+        "اكتب `$` قبل السؤال.\n\n" +
 
-  score.exercises += 1;
+        "مثال:\n" +
+        "$Was bedeutet laufen?\n\n" +
 
+        "📝 الأوامر:\n\n" +
 
-  await sendAIExercise(jid);
+        "!exercise\n" +
+        "طلب تمرين AI فوراً.\n\n" +
+
+        "!points\n" +
+        "عرض نقاطك ومستواك.\n\n" +
+
+        "!rank\n" +
+        "عرض ترتيب الأعضاء.\n\n" +
+
+        "!help\n" +
+        "عرض المساعدة.\n\n" +
+
+        "⏰ يتم إرسال تمرين تلقائياً كل دقيقة.\n\n" +
+
+        "💡 الرسائل العادية بدون $ لا يتم الرد عليها."
+    }
+  );
+
 }
 
 
@@ -958,61 +942,73 @@ async function manualExercise(jid, msg) {
 
 function getMessageText(msg) {
 
-  if (!msg?.message) {
-    return "";
-  }
-
-
   if (
-    msg.message.conversation
+    msg.message?.conversation
   ) {
 
     return msg.message.conversation;
+
   }
 
 
   if (
-    msg.message.extendedTextMessage?.text
+    msg.message
+      ?.extendedTextMessage
+      ?.text
   ) {
 
     return (
-      msg.message.extendedTextMessage.text
+      msg.message
+        .extendedTextMessage
+        .text
     );
+
   }
 
 
   if (
-    msg.message.ephemeralMessage?.message
+    msg.message
+      ?.ephemeralMessage
+      ?.message
       ?.conversation
   ) {
 
     return (
-      msg.message.ephemeralMessage
-        .message.conversation
+      msg.message
+        .ephemeralMessage
+        .message
+        .conversation
     );
+
   }
 
 
   if (
-    msg.message.ephemeralMessage?.message
-      ?.extendedTextMessage?.text
+    msg.message
+      ?.ephemeralMessage
+      ?.message
+      ?.extendedTextMessage
+      ?.text
   ) {
 
     return (
-      msg.message.ephemeralMessage
+      msg.message
+        .ephemeralMessage
         .message
         .extendedTextMessage
         .text
     );
+
   }
 
 
   return "";
+
 }
 
 
 // ============================================================
-// MESSAGE HANDLER
+// HANDLE MESSAGE
 // ============================================================
 
 async function handleMessage(msg) {
@@ -1031,40 +1027,43 @@ async function handleMessage(msg) {
   if (!jid) return;
 
 
-  // المجموعات فقط
+  // مجموعات فقط
   if (
     !jid.endsWith("@g.us")
   ) {
 
     return;
+
   }
 
 
-  // المجموعات المسموحة فقط
+  // فقط المجموعتان
   if (
     !ALLOWED_GROUPS.includes(jid)
   ) {
 
     return;
+
   }
 
 
-  const rawText =
-    getMessageText(msg);
+  const text =
+    getMessageText(msg)
+      .trim();
 
 
-  const question =
-    rawText.trim();
-
-
-  if (!question) return;
+  if (!text) return;
 
 
   console.log("");
   console.log(
     "📩 GROUP MESSAGE:",
-    question
+    text
   );
+
+
+  const lower =
+    text.toLowerCase();
 
 
   // ==========================================================
@@ -1072,86 +1071,18 @@ async function handleMessage(msg) {
   // ==========================================================
 
   if (
-    question.toLowerCase() ===
-    "!test"
+    lower === "!help"
   ) {
 
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-          "🇩🇪🤖 German AI Bot\n\n" +
-
-          "✅ البوت يعمل.\n" +
-
-          "🧠 Groq AI متصل.\n" +
-
-          "📝 تمارين AI مفعلة.\n" +
-
-          "⏰ تمرين تلقائي كل 5 دقائق.\n" +
-
-          "🏆 نظام النقاط يعمل."
-      }
-    );
+    await sendHelp(jid);
 
     return;
+
   }
 
 
   if (
-    question.toLowerCase() ===
-    "!help"
-  ) {
-
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-          "🇩🇪🤖 *German AI Bot*\n\n" +
-
-          "📝 !exercise\n" +
-          "تمرين AI جديد.\n\n" +
-
-          "⭐ !points\n" +
-          "نقاطك ومستواك.\n\n" +
-
-          "🏆 !rank\n" +
-          "عرض ترتيب الأعضاء.\n\n" +
-
-          "💲 $سؤالك\n" +
-          "اسأل الذكاء الاصطناعي.\n\n" +
-
-          "مثال:\n" +
-          "$Was bedeutet laufen?"
-      }
-    );
-
-    return;
-  }
-
-
-  // ==========================================================
-  // RANK
-  // ==========================================================
-
-  if (
-    question.toLowerCase() ===
-    "!rank"
-  ) {
-
-    await sendRank(jid);
-
-    return;
-  }
-
-
-  // ==========================================================
-  // POINTS
-  // ==========================================================
-
-  if (
-    question.toLowerCase() ===
-    "!points"
+    lower === "!points"
   ) {
 
     await sendPoints(
@@ -1160,46 +1091,56 @@ async function handleMessage(msg) {
     );
 
     return;
+
   }
 
 
-  // ==========================================================
-  // MANUAL EXERCISE
-  // ==========================================================
-
   if (
-    question.toLowerCase() ===
-    "!exercise"
+    lower === "!rank"
   ) {
 
-    await manualExercise(
-      jid,
-      msg
-    );
+    await sendRanking(jid);
 
     return;
+
   }
 
 
   // ==========================================================
-  // ANSWER 1 / 2 / 3
+  // MANUAL AI EXERCISE
   // ==========================================================
 
   if (
-    /^[123]$/.test(question)
+    lower === "!exercise"
+  ) {
+
+    await sendAIExercise(jid);
+
+    return;
+
+  }
+
+
+  // ==========================================================
+  // EXERCISE ANSWER
+  // ==========================================================
+
+  if (
+    /^[1-3]$/.test(text)
   ) {
 
     const handled =
       await handleExerciseAnswer(
         jid,
         msg,
-        question
+        text
       );
 
 
     if (handled) {
 
       return;
+
     }
 
   }
@@ -1210,7 +1151,7 @@ async function handleMessage(msg) {
   // ==========================================================
 
   if (
-    !question.startsWith("$")
+    !text.startsWith("$")
   ) {
 
     console.log(
@@ -1218,39 +1159,40 @@ async function handleMessage(msg) {
     );
 
     return;
+
   }
 
 
-  const aiQuestion =
-    question
+  const question =
+    text
       .slice(1)
       .trim();
 
 
-  if (!aiQuestion) {
+  if (!question) {
 
     return;
+
   }
 
 
   console.log(
-    "🤖 Sending to AI..."
+    "🤖 Sending to AI:",
+    question
   );
 
 
   try {
 
     const answer =
-      await askAI(
-        aiQuestion
-      );
+      await askAI(question);
 
 
     await sock.sendMessage(
       jid,
       {
         text:
-          "🇩🇪🤖 *German AI Bot*\n\n" +
+          "🇩🇪🤖 *German B1 AI*\n\n" +
           answer
       }
     );
@@ -1274,32 +1216,34 @@ async function handleMessage(msg) {
       jid,
       {
         text:
-          "❌ حدث خطأ في الذكاء الاصطناعي.\n" +
-          "حاول مرة أخرى."
+          "❌ حدث خطأ في الذكاء الاصطناعي.\nحاول مرة أخرى."
       }
     );
+
   }
+
 }
 
 
 // ============================================================
-// CONNECT TO WHATSAPP
+// START WHATSAPP
 // ============================================================
 
 async function startBot() {
 
-  // منع تشغيل Socket ثاني
-  if (reconnecting) {
+  // منع تشغيل startBot مرتين
+  if (startingBot) {
 
     console.log(
-      "⏭️ Connection already in progress."
+      "⏭️ Bot is already starting."
     );
 
     return;
+
   }
 
 
-  reconnecting = true;
+  startingBot = true;
 
 
   try {
@@ -1324,9 +1268,10 @@ async function startBot() {
 
         auth: state,
 
-        logger: pino({
-          level: "silent"
-        }),
+        logger:
+          pino({
+            level: "silent"
+          }),
 
         browser:
           Browsers.macOS("Chrome"),
@@ -1335,50 +1280,21 @@ async function startBot() {
           false,
 
         syncFullHistory:
-          false,
-
-        generateHighQualityLinkPreview:
           false
 
       });
 
 
+    // حفظ بيانات الجلسة
     sock.ev.on(
       "creds.update",
       saveCreds
     );
 
 
-    sock.ev.on(
-      "messages.upsert",
-      async ({ messages }) => {
-
-        for (
-          const msg of messages
-        ) {
-
-          try {
-
-            await handleMessage(
-              msg
-            );
-
-          }
-
-          catch (error) {
-
-            console.log(
-              "❌ Message error:",
-              error.message
-            );
-
-          }
-
-        }
-
-      }
-    );
-
+    // ========================================================
+    // CONNECTION
+    // ========================================================
 
     sock.ev.on(
       "connection.update",
@@ -1389,10 +1305,6 @@ async function startBot() {
           lastDisconnect
         } = update;
 
-
-        // ==================================================
-        // CONNECTING
-        // ==================================================
 
         if (
           connection === "connecting"
@@ -1405,15 +1317,11 @@ async function startBot() {
         }
 
 
-        // ==================================================
-        // OPEN
-        // ==================================================
-
         if (
           connection === "open"
         ) {
 
-          reconnecting = false;
+          startingBot = false;
 
 
           console.log("");
@@ -1434,7 +1342,7 @@ async function startBot() {
           );
 
           console.log(
-            "⏰ AUTO EXERCISE EVERY 5 MINUTES!"
+            "⏰ AUTO EXERCISE EVERY 1 MINUTE!"
           );
 
           console.log(
@@ -1452,36 +1360,34 @@ async function startBot() {
 
           console.log("");
           console.log(
-            `👥 GROUPS ALLOWED: ${ALLOWED_GROUPS.length}`
+            "👥 GROUPS ALLOWED:",
+            ALLOWED_GROUPS.length
           );
 
 
-          ALLOWED_GROUPS.forEach(
-            (id) => {
+          for (
+            const group of ALLOWED_GROUPS
+          ) {
 
-              console.log(
-                `👥 ${id}`
-              );
+            console.log(
+              "👥",
+              group
+            );
 
-            }
-          );
+          }
 
 
-          // تشغيل المؤقت مرة واحدة فقط
-          startAutomaticExercises();
+          // تشغيل مؤقت واحد فقط
+          startExerciseTimer();
 
         }
 
-
-        // ==================================================
-        // CLOSE
-        // ==================================================
 
         if (
           connection === "close"
         ) {
 
-          reconnecting = false;
+          startingBot = false;
 
 
           let code = 0;
@@ -1489,30 +1395,26 @@ async function startBot() {
 
           try {
 
-            const error =
-              lastDisconnect?.error;
+            if (
+              lastDisconnect?.error instanceof Boom
+            ) {
 
+              code =
+                lastDisconnect
+                  .error
+                  .output
+                  .statusCode;
 
-            if (error) {
+            }
 
-              if (
-                error instanceof Boom
-              ) {
+            else {
 
-                code =
-                  error.output?.statusCode ||
-                  0;
-
-              }
-
-              else {
-
-                code =
-                  error?.output?.statusCode ||
-                  error?.data?.statusCode ||
-                  0;
-
-              }
+              code =
+                lastDisconnect
+                  ?.error
+                  ?.output
+                  ?.statusCode ||
+                0;
 
             }
 
@@ -1527,21 +1429,23 @@ async function startBot() {
           }
 
 
+          console.log("");
           console.log(
             "❌ WhatsApp disconnected. Code:",
             code
           );
 
 
-          // ==================================================
-          // LOGGED OUT
-          // ==================================================
+          // ====================================================
+          // REAL LOGOUT
+          // ====================================================
 
           if (
             code ===
             DisconnectReason.loggedOut
           ) {
 
+            console.log("");
             console.log(
               "🚨 WhatsApp logged out."
             );
@@ -1553,36 +1457,81 @@ async function startBot() {
             sock = null;
 
             return;
+
           }
 
 
-          // ==================================================
-          // CONNECTION CLOSED / RESTART REQUIRED
-          // ==================================================
+          // ====================================================
+          // OTHER DISCONNECTS
+          // ====================================================
 
-          if (
-            !reconnectTimer
-          ) {
+          console.log(
+            "🔄 Reconnecting in 5 seconds..."
+          );
+
+
+          // إغلاق الـ socket القديم
+          try {
+
+            if (sock) {
+
+              sock.ev.removeAllListeners();
+
+            }
+
+          }
+
+          catch (e) {
 
             console.log(
-              "🔄 Reconnecting in 5 seconds..."
+              "⚠️ Could not clean old socket."
             );
 
+          }
 
-            reconnectTimer =
-              setTimeout(
-                async () => {
 
-                  reconnectTimer =
-                    null;
+          sock = null;
 
-                  sock = null;
 
-                  await startBot();
+          setTimeout(
+            () => {
 
-                },
-                5000
-              );
+              startBot();
+
+            },
+            5000
+          );
+
+        }
+
+      }
+    );
+
+
+    // ========================================================
+    // MESSAGES
+    // ========================================================
+
+    sock.ev.on(
+      "messages.upsert",
+      async ({ messages }) => {
+
+        for (
+          const msg of messages
+        ) {
+
+          try {
+
+            await handleMessage(msg);
+
+          }
+
+          catch (error) {
+
+            console.log(
+              "❌ Message error:",
+              error.message
+            );
 
           }
 
@@ -1592,9 +1541,9 @@ async function startBot() {
     );
 
 
-    // ==================================================
+    // ========================================================
     // PAIRING
-    // ==================================================
+    // ========================================================
 
     if (
       !state.creds.registered
@@ -1607,12 +1556,13 @@ async function startBot() {
       if (!phoneNumber) {
 
         console.log(
-          "❌ WHATSAPP_NUMBER is missing."
+          "❌ WHATSAPP_NUMBER is missing in Render."
         );
 
-        reconnecting = false;
+        startingBot = false;
 
         return;
+
       }
 
 
@@ -1662,8 +1612,6 @@ async function startBot() {
           "======================================"
         );
 
-        console.log("");
-
       }
 
       catch (error) {
@@ -1681,7 +1629,7 @@ async function startBot() {
 
   catch (error) {
 
-    reconnecting = false;
+    startingBot = false;
 
     console.log(
       "❌ BOT START ERROR:",
@@ -1689,24 +1637,22 @@ async function startBot() {
     );
 
 
-    if (!reconnectTimer) {
+    sock = null;
 
-      reconnectTimer =
-        setTimeout(
-          async () => {
 
-            reconnectTimer =
-              null;
+    console.log(
+      "🔄 Restarting in 10 seconds..."
+    );
 
-            sock = null;
 
-            await startBot();
+    setTimeout(
+      () => {
 
-          },
-          10000
-        );
+        startBot();
 
-    }
+      },
+      10000
+    );
 
   }
 
