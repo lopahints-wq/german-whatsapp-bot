@@ -29,31 +29,19 @@ app.listen(PORT, () => {
 
 
 // ==================================================
-// POINTS SYSTEM
+// DATA
 // ==================================================
 
 const scores = {};
 
+// التمرين الحالي لكل مجموعة
+const groupExercises = {};
 
-// ==================================================
-// ACTIVE QUESTIONS
-// ==================================================
+// لمنع تشغيل أكثر من مؤقت
+let exerciseInterval = null;
 
-const activeQuestions = {};
-
-
-// ==================================================
-// GROUPS
-// ==================================================
-
-let botGroups = [];
-
-
-// ==================================================
-// AUTO EXERCISE TIMER
-// ==================================================
-
-let exerciseTimer = null;
+// لمنع تشغيل أكثر من Bot في نفس الوقت
+let starting = false;
 
 
 // ==================================================
@@ -85,27 +73,6 @@ function getUserName(msg) {
 
 
 // ==================================================
-// SCORE
-// ==================================================
-
-function getScore(userId) {
-
-  if (!scores[userId]) {
-
-    scores[userId] = {
-      points: 0,
-      correct: 0,
-      wrong: 0
-    };
-
-  }
-
-  return scores[userId];
-
-}
-
-
-// ==================================================
 // LEVEL
 // ==================================================
 
@@ -129,10 +96,32 @@ function getLevel(points) {
 
 
 // ==================================================
-// GROQ AI
+// SCORE
 // ==================================================
 
-async function askAI(question, instructions = "") {
+function getScore(userId) {
+
+  if (!scores[userId]) {
+
+    scores[userId] = {
+      points: 0,
+      correct: 0,
+      wrong: 0,
+      exercises: 0
+    };
+
+  }
+
+  return scores[userId];
+
+}
+
+
+// ==================================================
+// GROQ REQUEST
+// ==================================================
+
+async function groqRequest(instructions, input) {
 
   const apiKey =
     process.env.GROQ_API_KEY;
@@ -145,12 +134,12 @@ async function askAI(question, instructions = "") {
 
   }
 
-  console.log("🧠 Sending to Groq...");
 
   const response =
     await fetch(
       "https://api.groq.com/openai/v1/responses",
       {
+
         method: "POST",
 
         headers: {
@@ -163,23 +152,12 @@ async function askAI(question, instructions = "") {
           model:
             "openai/gpt-oss-20b",
 
-          instructions:
-            instructions ||
-            `
-أنت مدرس لغة ألمانية داخل مجموعة WhatsApp.
+          instructions,
 
-ساعد الأعضاء على تعلم الألمانية من A1 إلى B1.
-
-استخدم العربية للشرح والألمانية للأمثلة.
-
-اجعل الإجابات قصيرة ومناسبة لـ WhatsApp.
-
-كن واضحاً وودوداً.
-`,
-
-          input: question
+          input
 
         })
+
       }
     );
 
@@ -216,6 +194,7 @@ async function askAI(question, instructions = "") {
   let answer = "";
 
 
+  // الطريقة الرسمية
   if (
     typeof data.output_text === "string"
   ) {
@@ -226,6 +205,7 @@ async function askAI(question, instructions = "") {
   }
 
 
+  // احتياط
   if (
     !answer &&
     Array.isArray(data.output)
@@ -271,11 +251,86 @@ async function askAI(question, instructions = "") {
 
   if (!answer) {
 
+    console.log(
+      "❌ Groq returned no text."
+    );
+
+    console.log(
+      JSON.stringify(
+        data,
+        null,
+        2
+      )
+    );
+
     throw new Error(
       "Groq returned an empty answer."
     );
 
   }
+
+
+  return answer;
+
+}
+
+
+// ==================================================
+// NORMAL AI
+// ==================================================
+
+async function askAI(question) {
+
+  console.log(
+    "🧠 Sending message to Groq..."
+  );
+
+  console.log(
+    "❓ Question:",
+    question
+  );
+
+
+  const answer =
+    await groqRequest(
+
+      `
+أنت مدرس لغة ألمانية داخل مجموعة WhatsApp.
+
+مهمتك مساعدة الأعضاء على تعلم اللغة الألمانية من A1 إلى B1.
+
+القواعد:
+
+1. إذا كتب المستخدم جملة بالألمانية:
+صححها ثم اشرح الخطأ بالعربية باختصار.
+
+2. إذا كتب المستخدم كلمة ألمانية:
+اشرح معناها بالعربية وأعط مثالاً بالألمانية مع الترجمة.
+
+3. إذا كتب المستخدم بالعربية:
+إذا كان يريد ترجمة، أعطه ترجمة ألمانية طبيعية.
+
+4. إذا سأل عن قاعدة ألمانية:
+اشرحها بطريقة بسيطة مع أمثلة.
+
+5. إذا طلب تمريناً:
+يمكنك إنشاء تمرين مناسب لمستواه.
+
+6. إذا كتب "اختبرني":
+ابدأ معه اختباراً قصيراً.
+
+7. استخدم العربية للشرح والألمانية للأمثلة.
+
+8. اجعل الإجابات مناسبة لـ WhatsApp وليست طويلة جداً.
+
+9. كن ودوداً وواضحاً.
+
+لا تستخدم مقدمات طويلة.
+      `,
+
+      question
+
+    );
 
 
   console.log(
@@ -295,59 +350,152 @@ async function askAI(question, instructions = "") {
 
 async function createAIExercise() {
 
+  console.log("");
+  console.log(
+    "======================================"
+  );
+
+  console.log(
+    "🧠 Creating AI exercise..."
+  );
+
+
+  const levels = [
+    "A1",
+    "A2",
+    "B1"
+  ];
+
+
+  const level =
+    levels[
+      Math.floor(
+        Math.random() *
+        levels.length
+      )
+    ];
+
+
+  console.log(
+    "📚 AI exercise level:",
+    level
+  );
+
+
   const prompt = `
-أنشئ سؤالاً واحداً لتعلم اللغة الألمانية.
 
-المستوى يكون عشوائياً بين A1 و A2 و B1.
+أنشئ تمريناً واحداً في اللغة الألمانية.
 
-يجب أن يكون السؤال اختياراً من 3 إجابات فقط.
+المستوى:
+${level}
 
-أريد منك إخراج النتيجة بهذا الشكل بالضبط:
+يجب أن يكون التمرين اختياراً من متعدد.
 
-LEVEL: A1
+مهم جداً:
+- 3 اختيارات فقط.
+- اختيار واحد صحيح فقط.
+- لا تجعل أكثر من اختيار صحيح.
+- السؤال مناسب للمستوى ${level}.
+- يمكن أن يكون عن القواعد أو المفردات أو ترتيب الجملة.
+- لا تستخدم سؤالاً معقداً جداً.
+- أضف شرحاً قصيراً بالعربية.
+
+أرسل النتيجة بهذا الشكل EXACTLY:
+
+LEVEL: ${level}
 
 QUESTION:
-🇩🇪 اختر الإجابة الصحيحة:
-
-Ich ___ jeden Tag Deutsch.
+اكتب السؤال هنا
 
 OPTIONS:
-1️⃣ lerne
-2️⃣ lernen
-3️⃣ lernst
+1. الاختيار الأول
+2. الاختيار الثاني
+3. الاختيار الثالث
 
 ANSWER:
 1
 
 EXPLANATION:
-شرح قصير بالعربية.
+شرح قصير بالعربية
 
-قواعد مهمة:
-
-- لا تستخدم 4 اختيارات.
-- يجب أن تكون هناك 3 اختيارات فقط.
-- ANSWER يجب أن يكون 1 أو 2 أو 3.
-- السؤال يجب أن يكون جديداً ومختلفاً في كل مرة.
-- يمكن أن يكون السؤال عن الكلمات أو القواعد أو ترتيب الجملة أو Artikel أو Perfekt أو Präpositionen.
-- اجعل المستوى مناسباً لـ A1-B1.
-- لا تضف أي نص خارج هذا التنسيق.
+لا تضف أي شيء آخر.
 `;
 
 
-  const result =
-    await askAI(
-      "أنشئ تمريناً جديداً الآن.",
+  const raw =
+    await groqRequest(
+
       `
-أنت مدرس ألمانية محترف.
+أنت مولد تمارين للغة الألمانية.
 
-مهمتك إنشاء تمارين ألمانية جديدة للمجموعة.
+أنشئ تمارين تعليمية دقيقة.
 
-${prompt}
-`
+يجب الالتزام حرفياً بالتنسيق المطلوب.
+      `,
+
+      prompt
+
     );
 
 
-  return parseExercise(result);
+  console.log(
+    "🤖 RAW EXERCISE:"
+  );
+
+  console.log(raw);
+
+
+  const exercise =
+    parseAIExercise(raw);
+
+
+  if (!exercise) {
+
+    throw new Error(
+      "Could not parse AI exercise."
+    );
+
+  }
+
+
+  console.log(
+    "📚 Exercise level:",
+    exercise.level
+  );
+
+  console.log(
+    "❓ QUESTION:"
+  );
+
+  console.log(
+    exercise.question
+  );
+
+  console.log(
+    "🔢 OPTIONS:"
+  );
+
+  console.log(
+    exercise.options
+  );
+
+  console.log(
+    "✅ ANSWER:",
+    exercise.answer
+  );
+
+  console.log(
+    "💡 EXPLANATION:",
+    exercise.explanation
+  );
+
+
+  console.log(
+    "======================================"
+  );
+
+
+  return exercise;
 
 }
 
@@ -356,45 +504,138 @@ ${prompt}
 // PARSE AI EXERCISE
 // ==================================================
 
-function parseExercise(text) {
+function parseAIExercise(raw) {
 
+  if (!raw) {
+    return null;
+  }
+
+
+  let text =
+    raw
+      .replace(/```/g, "")
+      .trim();
+
+
+  // LEVEL
   const levelMatch =
     text.match(
-      /LEVEL:\s*(A1|A2|B1)/i
+      /LEVEL\s*:\s*([A-C][1-2]\+?)/i
     );
-
-  const answerMatch =
-    text.match(
-      /ANSWER:\s*([123])/i
-    );
-
-
-  if (!answerMatch) {
-
-    throw new Error(
-      "AI exercise has no valid answer."
-    );
-
-  }
 
 
   const level =
     levelMatch
       ? levelMatch[1].toUpperCase()
-      : "A1";
+      : "A2";
+
+
+  // QUESTION
+  const questionMatch =
+    text.match(
+      /QUESTION\s*:\s*([\s\S]*?)\s*OPTIONS\s*:/i
+    );
+
+
+  if (!questionMatch) {
+    return null;
+  }
+
+
+  const question =
+    questionMatch[1].trim();
+
+
+  // OPTIONS
+  const optionsMatch =
+    text.match(
+      /OPTIONS\s*:\s*([\s\S]*?)\s*ANSWER\s*:/i
+    );
+
+
+  if (!optionsMatch) {
+    return null;
+  }
+
+
+  const optionsText =
+    optionsMatch[1].trim();
+
+
+  const optionMatches =
+    optionsText.match(
+      /^\s*[1-3][.)]\s*(.+)$/gmi
+    );
+
+
+  if (
+    !optionMatches ||
+    optionMatches.length !== 3
+  ) {
+
+    console.log(
+      "❌ Could not find exactly 3 options."
+    );
+
+    return null;
+
+  }
+
+
+  const options =
+    optionMatches.map(
+      line =>
+        line
+          .replace(
+            /^\s*[1-3][.)]\s*/,
+            ""
+          )
+          .trim()
+    );
+
+
+  // ANSWER
+  const answerMatch =
+    text.match(
+      /ANSWER\s*:\s*([1-3])/i
+    );
+
+
+  if (!answerMatch) {
+    return null;
+  }
 
 
   const answer =
-    Number(answerMatch[1]);
+    Number(
+      answerMatch[1]
+    );
+
+
+  // EXPLANATION
+  const explanationMatch =
+    text.match(
+      /EXPLANATION\s*:\s*([\s\S]*)$/i
+    );
+
+
+  const explanation =
+    explanationMatch
+      ? explanationMatch[1].trim()
+      : "أحسنت!";
 
 
   return {
 
-    text,
-
     level,
 
-    answer
+    question,
+
+    options,
+
+    answer,
+
+    explanation
 
   };
 
@@ -402,31 +643,51 @@ function parseExercise(text) {
 
 
 // ==================================================
-// SEND AUTO EXERCISE
+// FORMAT EXERCISE
 // ==================================================
 
-async function sendAutoExercise(sock) {
+function formatExercise(exercise) {
 
-  if (!botGroups.length) {
+  return (
 
-    console.log(
-      "⚠️ No groups available for exercise."
-    );
+    "📝🇩🇪 *German AI Exercise*\n\n" +
 
-    return;
+    `📚 المستوى: ${exercise.level}\n\n` +
 
-  }
+    "🇩🇪 *اختر الإجابة الصحيحة:*\n\n" +
 
+    exercise.question +
+
+    "\n\n" +
+
+    `1️⃣ ${exercise.options[0]}\n` +
+
+    `2️⃣ ${exercise.options[1]}\n` +
+
+    `3️⃣ ${exercise.options[2]}\n\n` +
+
+    "💡 أرسل رقم الإجابة فقط:\n" +
+
+    "1 أو 2 أو 3"
+
+  );
+
+}
+
+
+// ==================================================
+// SEND AI EXERCISE TO GROUP
+// ==================================================
+
+async function sendAIExercise(
+  sock,
+  jid
+) {
 
   try {
 
-    console.log("");
     console.log(
-      "======================================"
-    );
-
-    console.log(
-      "🧠 Creating AI exercise..."
+      `🧠 Creating exercise for ${jid}`
     );
 
 
@@ -434,97 +695,43 @@ async function sendAutoExercise(sock) {
       await createAIExercise();
 
 
-    console.log(
-      "📚 Exercise level:",
-      exercise.level
+    // حفظ التمرين الحالي للمجموعة
+    groupExercises[jid] = {
+
+      question:
+        exercise.question,
+
+      options:
+        exercise.options,
+
+      answer:
+        exercise.answer,
+
+      explanation:
+        exercise.explanation,
+
+      level:
+        exercise.level,
+
+      createdAt:
+        Date.now()
+
+    };
+
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          formatExercise(
+            exercise
+          )
+      }
     );
 
-    console.log(
-      "✅ Correct answer:",
-      exercise.answer
-    );
-
-
-    for (
-      const jid of botGroups
-    ) {
-
-      try {
-
-        // ------------------------------------------
-        // SAVE ACTIVE QUESTION
-        // ------------------------------------------
-
-        activeQuestions[jid] = {
-
-          answer:
-            exercise.answer,
-
-          level:
-            exercise.level,
-
-          createdAt:
-            Date.now()
-
-        };
-
-
-        // ------------------------------------------
-        // SEND QUESTION
-        // ------------------------------------------
-
-        const message =
-          "🇩🇪🧠 *German AI Exercise*\n\n" +
-
-          `📚 المستوى: ${exercise.level}\n\n` +
-
-          exercise.text
-            .replace(
-              /LEVEL:\s*(A1|A2|B1)\s*/i,
-              ""
-            )
-            .replace(
-              /ANSWER:\s*[123][\s\S]*/i,
-              ""
-            )
-            .trim() +
-
-          "\n\n" +
-
-          "💡 أرسل رقم الإجابة فقط:\n" +
-          "1️⃣ أو 2️⃣ أو 3️⃣";
-
-
-        await sock.sendMessage(
-          jid,
-          {
-            text: message
-          }
-        );
-
-
-        console.log(
-          "✅ Exercise sent to:",
-          jid
-        );
-
-
-      }
-
-      catch (error) {
-
-        console.log(
-          "❌ Could not send exercise:",
-          error.message
-        );
-
-      }
-
-    }
-
 
     console.log(
-      "======================================"
+      `✅ Exercise sent to: ${jid}`
     );
 
   }
@@ -532,7 +739,7 @@ async function sendAutoExercise(sock) {
   catch (error) {
 
     console.log(
-      "❌ AI exercise error:",
+      "❌ Exercise error:",
       error.message
     );
 
@@ -542,78 +749,174 @@ async function sendAutoExercise(sock) {
 
 
 // ==================================================
-// FIND GROUPS
+// HANDLE AI EXERCISE ANSWER
 // ==================================================
 
-async function loadGroups(sock) {
+async function handleExerciseAnswer(
+  sock,
+  jid,
+  msg,
+  text
+) {
 
-  try {
+  // لا يوجد تمرين حالي في المجموعة
+  if (!groupExercises[jid]) {
 
-    const groups =
-      await sock.groupFetchAllParticipating();
-
-
-    botGroups =
-      Object.keys(groups);
-
-
-    console.log("");
-    console.log(
-      "======================================"
-    );
-
-    console.log(
-      "📋 GROUPS FOUND:",
-      botGroups.length
-    );
-
-
-    for (
-      const jid of botGroups
-    ) {
-
-      console.log(
-        "👥",
-        groups[jid].subject
-      );
-
-      console.log(
-        "🆔",
-        jid
-      );
-
-    }
-
-
-    console.log(
-      "======================================"
-    );
-
-
-    if (!botGroups.length) {
-
-      console.log(
-        "⚠️ No WhatsApp groups found."
-      );
-
-    }
+    return false;
 
   }
 
-  catch (error) {
+
+  // الإجابة يجب أن تكون 1 أو 2 أو 3
+  if (!/^[1-3]$/.test(text)) {
+
+    return false;
+
+  }
+
+
+  const exercise =
+    groupExercises[jid];
+
+
+  const selected =
+    Number(text);
+
+
+  const userId =
+    getUserId(msg);
+
+
+  const userName =
+    getUserName(msg);
+
+
+  const score =
+    getScore(userId);
+
+
+  score.exercises += 1;
+
+
+  console.log("");
+  console.log(
+    "======================================"
+  );
+
+  console.log(
+    "📝 EXERCISE ANSWER"
+  );
+
+  console.log(
+    "👤 User:",
+    userName
+  );
+
+  console.log(
+    "🔢 Selected:",
+    selected
+  );
+
+  console.log(
+    "✅ Correct:",
+    exercise.answer
+  );
+
+
+  // ==================================================
+  // CORRECT
+  // ==================================================
+
+  if (
+    selected ===
+    exercise.answer
+  ) {
+
+    score.points += 10;
+
+    score.correct += 1;
+
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+
+          "✅ *إجابة صحيحة!* 🎉\n\n" +
+
+          `👤 ${userName}\n\n` +
+
+          "⭐ +10 XP\n" +
+
+          `⭐ نقاطك: ${score.points} XP\n` +
+
+          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
+
+          `💡 ${exercise.explanation}`
+
+      }
+    );
+
 
     console.log(
-      "❌ Could not load groups:",
-      error.message
+      "✅ Correct answer."
     );
 
   }
+
+  // ==================================================
+  // WRONG
+  // ==================================================
+
+  else {
+
+    score.wrong += 1;
+
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+
+          "❌ *إجابة خاطئة*\n\n" +
+
+          `👤 ${userName}\n\n` +
+
+          `الإجابة الصحيحة: ${exercise.answer}️⃣\n\n` +
+
+          `⭐ نقاطك: ${score.points} XP\n` +
+
+          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
+
+          `💡 ${exercise.explanation}`
+
+      }
+    );
+
+
+    console.log(
+      "❌ Wrong answer."
+    );
+
+  }
+
+
+  console.log(
+    "======================================"
+  );
+
+
+  // مهم:
+  // لا نحذف التمرين بعد إجابة شخص واحد.
+  // حتى يستطيع باقي أعضاء المجموعة الإجابة أيضاً.
+
+  return true;
 
 }
 
 
 // ==================================================
-// POINTS
+// SEND POINTS
 // ==================================================
 
 async function sendPoints(
@@ -625,8 +928,10 @@ async function sendPoints(
   const userId =
     getUserId(msg);
 
+
   const score =
     getScore(userId);
+
 
   const name =
     getUserName(msg);
@@ -635,6 +940,7 @@ async function sendPoints(
   await sock.sendMessage(
     jid,
     {
+
       text:
 
         "⭐ *نقاطك في German B1 Bot*\n\n" +
@@ -645,9 +951,12 @@ async function sendPoints(
 
         `🎯 المستوى: ${getLevel(score.points)}\n\n` +
 
-        `✅ صحيحة: ${score.correct}\n` +
+        `✅ إجابات صحيحة: ${score.correct}\n` +
 
-        `❌ خاطئة: ${score.wrong}\n`
+        `❌ إجابات خاطئة: ${score.wrong}\n\n` +
+
+        `📝 التمارين: ${score.exercises}`
+
     }
   );
 
@@ -673,7 +982,8 @@ async function sendRanking(
       jid,
       {
         text:
-          "🏆 لا توجد نقاط حتى الآن."
+          "🏆 لا توجد نقاط بعد.\n\n" +
+          "ابدأ بحل التمارين."
       }
     );
 
@@ -690,7 +1000,10 @@ async function sendRanking(
 
 
   const top =
-    users.slice(0, 10);
+    users.slice(
+      0,
+      10
+    );
 
 
   let message =
@@ -714,9 +1027,7 @@ async function sendRanking(
 
         `${medal} ${userId.split("@")[0]}\n` +
 
-        `⭐ ${score.points} XP\n` +
-
-        `🎯 ${getLevel(score.points)}\n\n`;
+        `⭐ ${score.points} XP — ${getLevel(score.points)}\n\n`;
 
     }
   );
@@ -725,7 +1036,8 @@ async function sendRanking(
   await sock.sendMessage(
     jid,
     {
-      text: message
+      text:
+        message
     }
   );
 
@@ -733,123 +1045,238 @@ async function sendRanking(
 
 
 // ==================================================
-// HANDLE ANSWER
+// HELP
 // ==================================================
 
-async function handleAnswer(
+async function sendHelp(
   sock,
-  jid,
-  msg,
-  text
+  jid
 ) {
 
-  if (
-    !/^[1-3]$/.test(text)
-  ) {
+  await sock.sendMessage(
+    jid,
+    {
 
-    return false;
+      text:
 
-  }
+        "🇩🇪🤖 *German B1 AI Bot*\n\n" +
 
+        "🧠 الذكاء الاصطناعي:\n" +
 
-  if (
-    !activeQuestions[jid]
-  ) {
+        "اكتب $ قبل السؤال.\n" +
 
-    return false;
+        "مثال:\n" +
 
-  }
+        "$Was bedeutet gehen?\n\n" +
 
+        "📝 التمارين:\n" +
 
-  const question =
-    activeQuestions[jid];
+        "!exercise\n" +
 
+        "إنشاء تمرين فوراً.\n\n" +
 
-  const selected =
-    Number(text);
+        "⭐ النقاط:\n" +
 
+        "!points\n\n" +
 
-  const userId =
-    getUserId(msg);
+        "🏆 الترتيب:\n" +
 
+        "!rank\n\n" +
 
-  const name =
-    getUserName(msg);
+        "💡 التمارين التلقائية يتم إرسالها كل 5 دقائق."
 
-
-  const score =
-    getScore(userId);
-
-
-  if (
-    selected ===
-    question.answer
-  ) {
-
-    score.points += 10;
-
-    score.correct += 1;
-
-
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-
-          "✅ *إجابة صحيحة!* 🎉\n\n" +
-
-          `👤 ${name}\n` +
-
-          "⭐ +10 XP\n\n" +
-
-          `⭐ مجموع نقاطك: ${score.points} XP\n` +
-
-          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
-
-          "👏 Sehr gut! 🇩🇪"
-      }
-    );
-
-  }
-
-  else {
-
-    score.wrong += 1;
-
-
-    await sock.sendMessage(
-      jid,
-      {
-        text:
-
-          "❌ *إجابة خاطئة*\n\n" +
-
-          `👤 ${name}\n\n` +
-
-          `⭐ نقاطك: ${score.points} XP\n` +
-
-          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
-
-          "💪 حاول في التمرين القادم!"
-      }
-    );
-
-  }
-
-
-  return true;
+    }
+  );
 
 }
 
 
 // ==================================================
-// START WHATSAPP BOT
+// START AUTOMATIC EXERCISES
+// ==================================================
+
+function startAutomaticExercises(
+  sock,
+  groupJids
+) {
+
+  // إذا كان هناك مؤقت قديم
+  if (exerciseInterval) {
+
+    clearInterval(
+      exerciseInterval
+    );
+
+  }
+
+
+  console.log("");
+  console.log(
+    "⏰ Automatic exercises started."
+  );
+
+  console.log(
+    "⏰ Interval: every 5 minutes."
+  );
+
+  console.log(
+    `👥 Groups: ${groupJids.length}`
+  );
+
+
+  // لا نرسل مباشرة عند التشغيل
+  // أول تمرين بعد 5 دقائق
+
+  exerciseInterval =
+    setInterval(
+      async () => {
+
+        console.log("");
+        console.log(
+          "⏰ 5 minutes passed."
+        );
+
+        console.log(
+          "🧠 Creating automatic exercises..."
+        );
+
+
+        for (
+          const jid of groupJids
+        ) {
+
+          try {
+
+            await sendAIExercise(
+              sock,
+              jid
+            );
+
+          }
+
+          catch (error) {
+
+            console.log(
+              "❌ Automatic exercise error:",
+              error.message
+            );
+
+          }
+
+
+          // تأخير صغير بين المجموعات
+          await new Promise(
+            resolve =>
+              setTimeout(
+                resolve,
+                3000
+              )
+          );
+
+        }
+
+      },
+
+      5 * 60 * 1000
+
+    );
+
+}
+
+
+// ==================================================
+// GET GROUPS
+// ==================================================
+
+async function getGroups(
+  sock
+) {
+
+  try {
+
+    const groups =
+      await sock.groupFetchAllParticipating();
+
+
+    const groupList =
+      Object.values(groups);
+
+
+    console.log("");
+    console.log(
+      "======================================"
+    );
+
+    console.log(
+      `📦 GROUPS FOUND: ${groupList.length}`
+    );
+
+
+    for (
+      const group of groupList
+    ) {
+
+      console.log(
+        `👥 ${group.subject}`
+      );
+
+      console.log(
+        `🆔 ${group.id}`
+      );
+
+    }
+
+
+    console.log(
+      "======================================"
+    );
+
+
+    return groupList.map(
+      group =>
+        group.id
+    );
+
+  }
+
+  catch (error) {
+
+    console.log(
+      "❌ Could not get groups:",
+      error.message
+    );
+
+
+    return [];
+
+  }
+
+}
+
+
+// ==================================================
+// START BOT
 // ==================================================
 
 async function startBot() {
 
+  if (starting) {
+
+    console.log(
+      "⚠️ Bot is already starting."
+    );
+
+    return;
+
+  }
+
+
+  starting = true;
+
+
   try {
 
+    console.log("");
     console.log(
       "🚀 Starting German B1 WhatsApp Bot..."
     );
@@ -869,20 +1296,24 @@ async function startBot() {
 
 
     // ==================================================
-    // WHATSAPP CONNECTION
+    // WHATSAPP
     // ==================================================
 
     const sock =
       makeWASocket({
 
-        auth: state,
+        auth:
+          state,
 
-        logger: pino({
-          level: "silent"
-        }),
+        logger:
+          pino({
+            level: "silent"
+          }),
 
         browser:
-          Browsers.macOS("Chrome"),
+          Browsers.macOS(
+            "Chrome"
+          ),
 
         markOnlineOnConnect:
           false,
@@ -891,6 +1322,9 @@ async function startBot() {
           false
 
       });
+
+
+    starting = false;
 
 
     // ==================================================
@@ -917,8 +1351,10 @@ async function startBot() {
         } = update;
 
 
+        // CONNECTING
         if (
-          connection === "connecting"
+          connection ===
+          "connecting"
         ) {
 
           console.log(
@@ -928,8 +1364,10 @@ async function startBot() {
         }
 
 
+        // CONNECTED
         if (
-          connection === "open"
+          connection ===
+          "open"
         ) {
 
           console.log("");
@@ -954,48 +1392,52 @@ async function startBot() {
           );
 
           console.log(
-            "🏆 RANKING AVAILABLE WITH !rank"
+            "🏆 RANK AVAILABLE WITH !rank"
+          );
+
+          console.log(
+            "💲 AI RESPONDS ONLY TO $"
           );
 
           console.log(
             "======================================"
           );
 
-          console.log("");
+
+          // الحصول على المجموعات
+          const groupJids =
+            await getGroups(
+              sock
+            );
 
 
-          // ------------------------------------------
-          // LOAD GROUPS
-          // ------------------------------------------
+          if (
+            groupJids.length === 0
+          ) {
 
-          await loadGroups(sock);
+            console.log(
+              "⚠️ No groups found."
+            );
 
+          }
 
-          // ------------------------------------------
-          // START TIMER
-          // ------------------------------------------
+          else {
 
-          if (!exerciseTimer) {
-
-            exerciseTimer =
-              setInterval(
-                () => {
-
-                  sendAutoExercise(
-                    sock
-                  );
-
-                },
-                5 * 60 * 1000
-              );
+            // تشغيل المؤقت
+            startAutomaticExercises(
+              sock,
+              groupJids
+            );
 
           }
 
         }
 
 
+        // DISCONNECTED
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
 
           let code = 0;
@@ -1026,12 +1468,14 @@ async function startBot() {
           }
 
 
+          console.log("");
           console.log(
             "❌ WhatsApp disconnected. Code:",
             code
           );
 
 
+          // LOGGED OUT
           if (
             code ===
             DisconnectReason.loggedOut
@@ -1045,19 +1489,55 @@ async function startBot() {
               "⚠️ Pair WhatsApp again."
             );
 
+
+            if (
+              exerciseInterval
+            ) {
+
+              clearInterval(
+                exerciseInterval
+              );
+
+              exerciseInterval =
+                null;
+
+            }
+
+
             return;
 
           }
 
 
+          // إعادة الاتصال
           console.log(
             "🔄 Reconnecting in 5 seconds..."
           );
 
 
+          if (
+            exerciseInterval
+          ) {
+
+            clearInterval(
+              exerciseInterval
+            );
+
+            exerciseInterval =
+              null;
+
+          }
+
+
           setTimeout(
-            startBot,
+            () => {
+
+              startBot();
+
+            },
+
             5000
+
           );
 
         }
@@ -1152,12 +1632,14 @@ async function startBot() {
 
 
     // ==================================================
-    // RECEIVE MESSAGES
+    // MESSAGES
     // ==================================================
 
     sock.ev.on(
       "messages.upsert",
-      async ({ messages }) => {
+      async ({
+        messages
+      }) => {
 
         for (
           const msg of messages
@@ -1165,11 +1647,14 @@ async function startBot() {
 
           try {
 
+            // BASIC
             if (!msg) continue;
 
             if (!msg.message) continue;
 
-            if (msg.key.fromMe) continue;
+            if (
+              msg.key.fromMe
+            ) continue;
 
 
             const jid =
@@ -1179,12 +1664,11 @@ async function startBot() {
             if (!jid) continue;
 
 
-            // ------------------------------------------
             // GROUPS ONLY
-            // ------------------------------------------
-
             if (
-              !jid.endsWith("@g.us")
+              !jid.endsWith(
+                "@g.us"
+              )
             ) {
 
               continue;
@@ -1192,9 +1676,9 @@ async function startBot() {
             }
 
 
-            // ------------------------------------------
-            // TEXT
-            // ------------------------------------------
+            // ==================================================
+            // GET TEXT
+            // ==================================================
 
             let text = "";
 
@@ -1261,6 +1745,7 @@ async function startBot() {
             if (!question) continue;
 
 
+            console.log("");
             console.log(
               "📩 GROUP MESSAGE:",
               question
@@ -1268,7 +1753,7 @@ async function startBot() {
 
 
             // ==================================================
-            // TEST
+            // !TEST
             // ==================================================
 
             if (
@@ -1279,13 +1764,22 @@ async function startBot() {
               await sock.sendMessage(
                 jid,
                 {
+
                   text:
+
                     "🇩🇪🤖 German B1 Bot\n\n" +
-                    "✅ البوت يعمل.\n" +
+
+                    "✅ البوت يعمل!\n" +
+
                     "🧠 Groq AI متصل.\n" +
-                    "⏰ التمارين التلقائية تعمل كل 5 دقائق."
+
+                    "📝 AI Exercises تعمل.\n" +
+
+                    "⭐ نظام النقاط يعمل."
+
                 }
               );
+
 
               continue;
 
@@ -1293,7 +1787,7 @@ async function startBot() {
 
 
             // ==================================================
-            // HELP
+            // !HELP
             // ==================================================
 
             if (
@@ -1301,28 +1795,11 @@ async function startBot() {
               "!help"
             ) {
 
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-
-                    "🇩🇪🤖 *German B1 AI Bot*\n\n" +
-
-                    "⏰ كل 5 دقائق ينزل تمرين AI تلقائياً.\n\n" +
-
-                    "⭐ !points\n" +
-                    "عرض نقاطك ومستواك.\n\n" +
-
-                    "🏆 !rank\n" +
-                    "عرض الترتيب.\n\n" +
-
-                    "💲 $السؤال\n" +
-                    "اسأل الذكاء الاصطناعي.\n\n" +
-
-                    "مثال:\n" +
-                    "$Was bedeutet gehen?"
-                }
+              await sendHelp(
+                sock,
+                jid
               );
+
 
               continue;
 
@@ -1330,7 +1807,32 @@ async function startBot() {
 
 
             // ==================================================
-            // POINTS
+            // !EXERCISE
+            // ==================================================
+
+            if (
+              question.toLowerCase() ===
+              "!exercise"
+            ) {
+
+              console.log(
+                "🧠 Manual AI exercise requested."
+              );
+
+
+              await sendAIExercise(
+                sock,
+                jid
+              );
+
+
+              continue;
+
+            }
+
+
+            // ==================================================
+            // !POINTS
             // ==================================================
 
             if (
@@ -1344,13 +1846,14 @@ async function startBot() {
                 msg
               );
 
+
               continue;
 
             }
 
 
             // ==================================================
-            // RANK
+            // !RANK
             // ==================================================
 
             if (
@@ -1363,21 +1866,24 @@ async function startBot() {
                 jid
               );
 
+
               continue;
 
             }
 
 
             // ==================================================
-            // ANSWER 1 / 2 / 3
+            // AI EXERCISE ANSWER
             // ==================================================
 
             if (
-              /^[1-3]$/.test(question)
+              /^[1-3]$/.test(
+                question
+              )
             ) {
 
               const handled =
-                await handleAnswer(
+                await handleExerciseAnswer(
                   sock,
                   jid,
                   msg,
@@ -1411,6 +1917,7 @@ async function startBot() {
             }
 
 
+            // إزالة $
             const aiQuestion =
               question
                 .slice(1)
@@ -1419,9 +1926,22 @@ async function startBot() {
 
             if (!aiQuestion) {
 
+              console.log(
+                "⏭️ Empty AI question."
+              );
+
               continue;
 
             }
+
+
+            // ==================================================
+            // ASK AI
+            // ==================================================
+
+            console.log(
+              "🤖 Sending to Groq..."
+            );
 
 
             const answer =
@@ -1430,13 +1950,26 @@ async function startBot() {
               );
 
 
+            // ==================================================
+            // SEND AI ANSWER
+            // ==================================================
+
             await sock.sendMessage(
               jid,
               {
+
                 text:
-                  "🇩🇪🤖 German B1 Bot\n\n" +
+
+                  "🇩🇪🤖 *German B1 Bot*\n\n" +
+
                   answer
+
               }
+            );
+
+
+            console.log(
+              "✅ AI reply sent."
             );
 
           }
@@ -1444,10 +1977,38 @@ async function startBot() {
 
           catch (error) {
 
+            console.log("");
             console.log(
               "❌ Message error:",
               error.message
             );
+
+
+            try {
+
+              await sock.sendMessage(
+                msg.key.remoteJid,
+                {
+
+                  text:
+
+                    "❌ حدث خطأ أثناء معالجة الطلب.\n\n" +
+
+                    "حاول مرة أخرى."
+
+                }
+              );
+
+            }
+
+            catch (sendError) {
+
+              console.log(
+                "❌ Could not send error message:",
+                sendError.message
+              );
+
+            }
 
           }
 
@@ -1461,6 +2022,9 @@ async function startBot() {
 
   catch (error) {
 
+    starting = false;
+
+
     console.log(
       "❌ BOT START ERROR:",
       error.message
@@ -1473,8 +2037,14 @@ async function startBot() {
 
 
     setTimeout(
-      startBot,
+      () => {
+
+        startBot();
+
+      },
+
       10000
+
     );
 
   }
