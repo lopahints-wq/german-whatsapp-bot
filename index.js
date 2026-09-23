@@ -5,7 +5,8 @@ const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  Browsers
+  Browsers,
+  fetchLatestWaWebVersion
 } = require("@whiskeysockets/baileys");
 
 const { Boom } = require("@hapi/boom");
@@ -29,16 +30,19 @@ app.listen(PORT, () => {
 
 
 // ==================================================
-// GROQ API
+// GROQ AI
 // ==================================================
 
-async function groqRequest(instructions, input) {
+async function askAI(question) {
 
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
     throw new Error("GROQ_API_KEY is missing in Render.");
   }
+
+  console.log("🧠 Sending message to Groq...");
+  console.log("❓ Question:", question);
 
   const response = await fetch(
     "https://api.groq.com/openai/v1/responses",
@@ -51,9 +55,46 @@ async function groqRequest(instructions, input) {
       },
 
       body: JSON.stringify({
+
         model: "openai/gpt-oss-20b",
-        instructions,
-        input
+
+        instructions: `
+أنت مدرس لغة ألمانية ذكي داخل مجموعة WhatsApp.
+
+مهمتك مساعدة أعضاء المجموعة على تعلم اللغة الألمانية من A1 إلى B1.
+
+القواعد:
+
+1. إذا كتب المستخدم جملة بالألمانية:
+صحح الجملة واشرح الخطأ بالعربية باختصار.
+
+2. إذا كتب كلمة ألمانية:
+اشرح معناها بالعربية وأعط مثالاً بالألمانية مع الترجمة.
+
+3. إذا كتب بالعربية وطلب ترجمة:
+أعطه ترجمة ألمانية طبيعية.
+
+4. إذا سأل عن قاعدة ألمانية:
+اشرحها بطريقة بسيطة مع أمثلة.
+
+5. إذا طلب تمريناً:
+أنشئ تمريناً مناسباً لمستواه.
+
+6. إذا كتب "اختبرني":
+ابدأ اختباراً قصيراً.
+
+7. إذا كان السؤال عاماً:
+أجب بشكل طبيعي.
+
+استخدم العربية في الشرح والألمانية في الأمثلة.
+
+اجعل الإجابات مناسبة لـ WhatsApp.
+لا تكن طويلاً جداً إلا إذا كان السؤال يحتاج شرحاً.
+
+كن ودوداً وواضحاً.
+`,
+
+        input: question
       })
     }
   );
@@ -80,14 +121,16 @@ async function groqRequest(instructions, input) {
 
   let answer = "";
 
-  // الطريقة الرسمية
+  // الطريقة الأولى
   if (
     typeof data.output_text === "string"
   ) {
-    answer = data.output_text.trim();
+
+    answer =
+      data.output_text.trim();
   }
 
-  // احتياط
+  // الطريقة الاحتياطية
   if (
     !answer &&
     Array.isArray(data.output)
@@ -115,7 +158,9 @@ async function groqRequest(instructions, input) {
         }
       }
 
-      if (answer) break;
+      if (answer) {
+        break;
+      }
     }
   }
 
@@ -134,66 +179,6 @@ async function groqRequest(instructions, input) {
     );
   }
 
-  return answer;
-}
-
-
-// ==================================================
-// NORMAL AI
-// ==================================================
-
-async function askAI(question) {
-
-  console.log(
-    "🧠 Sending question to Groq..."
-  );
-
-  console.log(
-    "❓ Question:",
-    question
-  );
-
-  const instructions = `
-أنت مدرس لغة ألمانية داخل مجموعة WhatsApp.
-
-مهمتك الأساسية مساعدة الأعضاء على تعلم اللغة الألمانية من A1 إلى B1.
-
-القواعد:
-
-1. إذا كتب المستخدم جملة بالألمانية:
-صححها، ثم اشرح الخطأ بالعربية باختصار.
-
-2. إذا كتب المستخدم كلمة ألمانية:
-اشرح معناها بالعربية وأعط مثالاً بالألمانية مع الترجمة.
-
-3. إذا كتب المستخدم بالعربية:
-إذا كان يريد ترجمة، أعطه ترجمة ألمانية طبيعية.
-
-4. إذا سأل عن قاعدة ألمانية:
-اشرحها بطريقة بسيطة مع مثالين.
-
-5. إذا طلب تمريناً:
-أنشئ تمريناً مناسباً لمستواه.
-
-6. إذا كتب "اختبرني":
-ابدأ معه اختباراً قصيراً في الألمانية.
-
-7. إذا كان السؤال عاماً:
-أجب عنه بشكل طبيعي.
-
-استخدم العربية للشرح والألمانية للأمثلة.
-
-اجعل الإجابات مناسبة لـ WhatsApp وليست طويلة جداً.
-
-كن ودوداً وواضحاً.
-`;
-
-  const answer =
-    await groqRequest(
-      instructions,
-      question
-    );
-
   console.log(
     "🤖 ANSWER:",
     answer
@@ -204,131 +189,14 @@ async function askAI(question) {
 
 
 // ==================================================
-// CREATE QUIZ
-// ==================================================
-
-async function createQuiz(level) {
-
-  console.log(
-    `🧠 Creating ${level} quiz...`
-  );
-
-  const instructions = `
-أنت مدرس لغة ألمانية وخبير في إعداد اختبارات اللغة.
-
-أنشئ سؤال اختيار من متعدد واحد فقط.
-
-المستوى:
-${level}
-
-الشروط:
-
-- السؤال باللغة الألمانية.
-- مناسب تماماً للمستوى ${level}.
-- 4 خيارات فقط.
-- إجابة واحدة صحيحة.
-- الخيارات باللغة الألمانية.
-- لا تضع A أو B أو C أو D داخل الخيارات.
-- لا تستخدم Markdown.
-- أرسل JSON فقط.
-- لا تضف أي كلام قبل أو بعد JSON.
-
-يجب أن يكون الشكل:
-
-{
-  "question": "السؤال بالألمانية",
-  "options": [
-    "الخيار الأول",
-    "الخيار الثاني",
-    "الخيار الثالث",
-    "الخيار الرابع"
-  ],
-  "correct": 0,
-  "explanation": "شرح مختصر بالعربية"
-}
-
-correct يجب أن يكون:
-0 للخيار الأول
-1 للخيار الثاني
-2 للخيار الثالث
-3 للخيار الرابع.
-`;
-
-  const raw =
-    await groqRequest(
-      instructions,
-      `أنشئ سؤال ${level} جديداً الآن.`
-    );
-
-  console.log(
-    "📦 RAW QUIZ:",
-    raw
-  );
-
-  // تنظيف Markdown إذا أضافه AI
-  let clean =
-    raw
-      .replace(/```json/gi, "")
-      .replace(/```/g, "")
-      .trim();
-
-  let quiz;
-
-  try {
-
-    quiz =
-      JSON.parse(clean);
-
-  } catch (error) {
-
-    console.log(
-      "❌ Quiz JSON error:",
-      clean
-    );
-
-    throw new Error(
-      "AI returned invalid quiz JSON."
-    );
-  }
-
-  // ==================================================
-  // VALIDATION
-  // ==================================================
-
-  if (
-    !quiz.question ||
-    !Array.isArray(quiz.options) ||
-    quiz.options.length !== 4 ||
-    typeof quiz.correct !== "number"
-  ) {
-
-    throw new Error(
-      "Invalid quiz format."
-    );
-  }
-
-  if (
-    quiz.correct < 0 ||
-    quiz.correct > 3
-  ) {
-
-    throw new Error(
-      "Invalid correct answer."
-    );
-  }
-
-  return quiz;
-}
-
-
-// ==================================================
-// WHATSAPP
+// START WHATSAPP
 // ==================================================
 
 async function startBot() {
 
   try {
 
+    console.log("");
     console.log(
       "🚀 Starting German B1 WhatsApp Bot..."
     );
@@ -341,35 +209,85 @@ async function startBot() {
     const {
       state,
       saveCreds
-    } =
-      await useMultiFileAuthState(
-        "./auth_info"
+    } = await useMultiFileAuthState(
+      "./auth_info"
+    );
+
+
+    // ==================================================
+    // GET CURRENT WHATSAPP WEB VERSION
+    // ==================================================
+
+    let waVersion;
+
+    try {
+
+      console.log(
+        "🌐 Getting latest WhatsApp Web version..."
       );
 
+      const latest =
+        await fetchLatestWaWebVersion({});
+
+      waVersion =
+        latest.version;
+
+      console.log(
+        "✅ WhatsApp Web version:",
+        waVersion.join(".")
+      );
+
+    } catch (error) {
+
+      console.log(
+        "⚠️ Could not get latest WhatsApp Web version."
+      );
+
+      console.log(
+        error.message
+      );
+    }
+
 
     // ==================================================
-    // CREATE WHATSAPP CONNECTION
+    // CREATE SOCKET
     // ==================================================
+
+    const socketOptions = {
+
+      auth: state,
+
+      logger: pino({
+        level: "silent"
+      }),
+
+      // لا نحتاج Chrome فعلي.
+      // Baileys يتصل مباشرة عبر WebSocket.
+      browser:
+        Browsers.macOS("Chrome"),
+
+      markOnlineOnConnect: false,
+
+      syncFullHistory: false,
+
+      printQRInTerminal: false,
+
+      connectTimeoutMs: 60000,
+
+      defaultQueryTimeoutMs: 60000
+    };
+
+
+    // إضافة النسخة فقط إذا تم الحصول عليها
+    if (waVersion) {
+
+      socketOptions.version =
+        waVersion;
+    }
+
 
     const sock =
-      makeWASocket({
-
-        auth: state,
-
-        logger: pino({
-          level: "silent"
-        }),
-
-        // نفس Browser الذي كان يعمل عندك
-        browser:
-          Browsers.macOS("Chrome"),
-
-        markOnlineOnConnect:
-          false,
-
-        syncFullHistory:
-          false
-      });
+      makeWASocket(socketOptions);
 
 
     // ==================================================
@@ -392,11 +310,15 @@ async function startBot() {
 
         const {
           connection,
-          lastDisconnect
+          lastDisconnect,
+          qr
         } = update;
 
 
+        // ----------------------------------------------
         // CONNECTING
+        // ----------------------------------------------
+
         if (
           connection === "connecting"
         ) {
@@ -407,7 +329,22 @@ async function startBot() {
         }
 
 
-        // CONNECTED
+        // ----------------------------------------------
+        // QR EVENT
+        // ----------------------------------------------
+
+        if (qr) {
+
+          console.log(
+            "📷 WhatsApp QR generated."
+          );
+        }
+
+
+        // ----------------------------------------------
+        // OPEN
+        // ----------------------------------------------
+
         if (
           connection === "open"
         ) {
@@ -426,11 +363,11 @@ async function startBot() {
           );
 
           console.log(
-            "💲 AI requires $"
+            "💲 AI responds only to messages ending with $"
           );
 
           console.log(
-            "📊 $quiz creates WhatsApp Poll"
+            "📊 Poll system enabled."
           );
 
           console.log(
@@ -441,7 +378,10 @@ async function startBot() {
         }
 
 
-        // DISCONNECTED
+        // ----------------------------------------------
+        // CLOSE
+        // ----------------------------------------------
+
         if (
           connection === "close"
         ) {
@@ -451,48 +391,85 @@ async function startBot() {
           try {
 
             if (
-              lastDisconnect?.error instanceof Boom
+              lastDisconnect?.error
             ) {
 
+              const boom =
+                lastDisconnect.error instanceof Boom
+                  ? lastDisconnect.error
+                  : new Boom(
+                      lastDisconnect.error
+                    );
+
               code =
-                lastDisconnect
-                  .error
-                  .output
-                  .statusCode;
+                boom.output?.statusCode || 0;
             }
 
-          } catch (e) {
+          } catch (error) {
 
             console.log(
-              "⚠️ Could not read disconnect code."
+              "⚠️ Could not read disconnect code:",
+              error.message
             );
           }
 
 
           console.log(
-            "❌ WhatsApp disconnected. Code:",
+            "❌ WhatsApp disconnected."
+          );
+
+          console.log(
+            "📛 Disconnect code:",
             code
           );
 
 
+          // ------------------------------------------
           // LOGGED OUT
+          // ------------------------------------------
+
           if (
             code === DisconnectReason.loggedOut
           ) {
 
+            console.log("");
             console.log(
               "⚠️ WhatsApp logged out."
             );
 
             console.log(
-              "⚠️ You need to pair WhatsApp again."
+              "⚠️ Delete auth_info and pair again."
             );
 
             return;
           }
 
 
-          // RECONNECT
+          // ------------------------------------------
+          // RESTART REQUIRED
+          // ------------------------------------------
+
+          if (
+            code === DisconnectReason.restartRequired
+          ) {
+
+            console.log(
+              "🔄 WhatsApp requires restart."
+            );
+
+            setTimeout(
+              startBot,
+              3000
+            );
+
+            return;
+          }
+
+
+          // ------------------------------------------
+          // NORMAL RECONNECT
+          // ------------------------------------------
+
           console.log(
             "🔄 Reconnecting in 5 seconds..."
           );
@@ -508,7 +485,7 @@ async function startBot() {
 
 
     // ==================================================
-    // PAIRING
+    // PAIRING CODE
     // ==================================================
 
     if (
@@ -529,6 +506,10 @@ async function startBot() {
       }
 
 
+      // ----------------------------------------------
+      // CLEAN NUMBER
+      // ----------------------------------------------
+
       const cleanNumber =
         phoneNumber.replace(
           /\D/g,
@@ -536,21 +517,36 @@ async function startBot() {
         );
 
 
+      console.log("");
       console.log(
-        "📱 Preparing WhatsApp pairing..."
+        "📱 WhatsApp number:",
+        cleanNumber
       );
 
+      console.log(
+        "📱 Preparing pairing..."
+      );
+
+
+      // ----------------------------------------------
+      // WAIT FOR CONNECTION
+      // ----------------------------------------------
 
       await new Promise(
         resolve =>
           setTimeout(
             resolve,
-            3000
+            5000
           )
       );
 
 
       try {
+
+        console.log(
+          "📱 Requesting WhatsApp pairing code..."
+        );
+
 
         const pairingCode =
           await sock.requestPairingCode(
@@ -564,7 +560,7 @@ async function startBot() {
         );
 
         console.log(
-          "📱 WHATSAPP PAIRING CODE:"
+          "📱 WHATSAPP PAIRING CODE"
         );
 
         console.log(
@@ -577,12 +573,44 @@ async function startBot() {
 
         console.log("");
 
-      } catch (error) {
+        console.log(
+          "📲 On WhatsApp:"
+        );
 
         console.log(
-          "❌ Pairing error:",
+          "Settings → Linked Devices → Link a Device"
+        );
+
+        console.log(
+          "→ Link with phone number"
+        );
+
+        console.log(
+          "→ Enter the code above"
+        );
+
+        console.log("");
+
+      } catch (error) {
+
+        console.log("");
+        console.log(
+          "❌ PAIRING ERROR"
+        );
+
+        console.log(
           error.message
         );
+
+        console.log(
+          JSON.stringify(
+            error,
+            null,
+            2
+          )
+        );
+
+        console.log("");
       }
     }
 
@@ -601,32 +629,35 @@ async function startBot() {
 
           try {
 
-            // ==================================================
+            // ------------------------------------------
             // BASIC CHECK
-            // ==================================================
+            // ------------------------------------------
 
-            if (!msg)
+            if (!msg) {
               continue;
+            }
 
-            if (!msg.message)
+            if (!msg.message) {
               continue;
+            }
 
-            // لا يرد على نفسه
-            if (msg.key.fromMe)
+            if (msg.key.fromMe) {
               continue;
+            }
 
 
             const jid =
               msg.key.remoteJid;
 
 
-            if (!jid)
+            if (!jid) {
               continue;
+            }
 
 
-            // ==================================================
+            // ------------------------------------------
             // GROUPS ONLY
-            // ==================================================
+            // ------------------------------------------
 
             if (
               !jid.endsWith("@g.us")
@@ -636,9 +667,9 @@ async function startBot() {
             }
 
 
-            // ==================================================
+            // ------------------------------------------
             // GET TEXT
-            // ==================================================
+            // ------------------------------------------
 
             let text = "";
 
@@ -652,6 +683,7 @@ async function startBot() {
 
             }
 
+
             else if (
               msg.message.extendedTextMessage?.text
             ) {
@@ -660,6 +692,7 @@ async function startBot() {
                 msg.message.extendedTextMessage.text;
 
             }
+
 
             else if (
               msg.message.ephemeralMessage?.message?.conversation
@@ -673,12 +706,9 @@ async function startBot() {
 
             }
 
+
             else if (
-              msg.message
-                .ephemeralMessage
-                ?.message
-                ?.extendedTextMessage
-                ?.text
+              msg.message.ephemeralMessage?.message?.extendedTextMessage?.text
             ) {
 
               text =
@@ -687,6 +717,7 @@ async function startBot() {
                   .message
                   .extendedTextMessage
                   .text;
+
             }
 
 
@@ -694,12 +725,13 @@ async function startBot() {
               text.trim();
 
 
-            if (!question)
+            if (!question) {
               continue;
+            }
 
 
             // ==================================================
-            // LOG
+            // LOG MESSAGE
             // ==================================================
 
             console.log("");
@@ -710,12 +742,11 @@ async function startBot() {
 
 
             // ==================================================
-            // TEST
+            // TEST COMMAND
             // ==================================================
 
             if (
-              question.toLowerCase()
-              === "!test"
+              question.toLowerCase() === "!test"
             ) {
 
               await sock.sendMessage(
@@ -723,10 +754,10 @@ async function startBot() {
                 {
                   text:
                     "🇩🇪🤖 German B1 Bot\n\n" +
-                    "✅ البوت يعمل بشكل صحيح!\n" +
-                    "🧠 Groq AI متصل.\n" +
-                    "📊 Quiz متاح عبر:\n\n" +
-                    "$quiz"
+                    "✅ البوت يعمل.\n" +
+                    "🧠 Groq متصل.\n" +
+                    "📊 Poll system يعمل.\n" +
+                    "💲 AI trigger: $"
                 }
               );
 
@@ -739,8 +770,7 @@ async function startBot() {
             // ==================================================
 
             if (
-              question.toLowerCase()
-              === "!help"
+              question.toLowerCase() === "!help"
             ) {
 
               await sock.sendMessage(
@@ -749,19 +779,20 @@ async function startBot() {
                   text:
                     "🇩🇪🤖 German B1 AI Bot\n\n" +
 
-                    "💬 سؤال للذكاء الاصطناعي:\n" +
-                    "Was bedeutet gehen?$\n\n" +
+                    "💡 الذكاء الاصطناعي يرد فقط عندما تنتهي الرسالة بـ $.\n\n" +
 
-                    "📊 اختبار A1:\n" +
-                    "$quiz A1\n\n" +
+                    "مثال:\n" +
+                    "Hallo\n" +
+                    "❌ لا يوجد رد\n\n" +
 
-                    "📊 اختبار A2:\n" +
-                    "$quiz A2\n\n" +
+                    "Hallo$\n" +
+                    "✅ البوت يرد\n\n" +
 
-                    "📊 اختبار B1:\n" +
-                    "$quiz B1\n\n" +
+                    "📊 إنشاء استفتاء:\n" +
+                    "!poll$ سؤال | خيار 1 | خيار 2\n\n" +
 
-                    "⚠️ أي رسالة لا تنتهي بـ $ لن يرد عليها البوت."
+                    "مثال:\n" +
+                    "!poll$ Was möchtest du lernen? | Grammatik | Sprechen | Wortschatz"
                 }
               );
 
@@ -770,97 +801,102 @@ async function startBot() {
 
 
             // ==================================================
-            // QUIZ
+            // POLL SYSTEM
+            // ==================================================
+            //
+            // الصيغة:
+            //
+            // !poll$ السؤال | الخيار 1 | الخيار 2
+            //
+            // مثال:
+            //
+            // !poll$ Was lernst du heute? | Grammatik | Sprechen
+            //
             // ==================================================
 
-            const lowerQuestion =
-              question.toLowerCase();
+            if (
+              question.toLowerCase().startsWith("!poll$")
+            ) {
+
+              const pollContent =
+                question
+                  .slice(6)
+                  .trim();
 
 
-            const isQuiz =
-              lowerQuestion === "$quiz" ||
-              lowerQuestion === "$quiz a1" ||
-              lowerQuestion === "$quiz a2" ||
-              lowerQuestion === "$quiz b1";
+              if (!pollContent) {
 
-
-            if (isQuiz) {
-
-              let level = "A2";
-
-
-              if (
-                lowerQuestion === "$quiz a1"
-              ) {
-
-                level = "A1";
-              }
-
-
-              if (
-                lowerQuestion === "$quiz a2"
-              ) {
-
-                level = "A2";
-              }
-
-
-              if (
-                lowerQuestion === "$quiz b1"
-              ) {
-
-                level = "B1";
-              }
-
-
-              console.log(
-                `📊 Quiz requested: ${level}`
-              );
-
-
-              // ----------------------------------------------
-              // اطلاع المجموعة
-              // ----------------------------------------------
-
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-                    `🇩🇪🔥 German ${level} Challenge\n\n` +
-                    "🧠 جاري إعداد السؤال..."
-                }
-              );
-
-
-              // ----------------------------------------------
-              // CREATE QUIZ
-              // ----------------------------------------------
-
-              const quiz =
-                await createQuiz(
-                  level
+                await sock.sendMessage(
+                  jid,
+                  {
+                    text:
+                      "❌ اكتب الاستفتاء بهذا الشكل:\n\n" +
+                      "!poll$ السؤال | الخيار 1 | الخيار 2"
+                  }
                 );
 
+                continue;
+              }
+
+
+              const parts =
+                pollContent
+                  .split("|")
+                  .map(
+                    item => item.trim()
+                  )
+                  .filter(Boolean);
+
+
+              if (
+                parts.length < 3
+              ) {
+
+                await sock.sendMessage(
+                  jid,
+                  {
+                    text:
+                      "❌ الاستفتاء يحتاج سؤالاً وخيارين على الأقل.\n\n" +
+                      "مثال:\n" +
+                      "!poll$ Was lernst du? | Grammatik | Sprechen"
+                  }
+                );
+
+                continue;
+              }
+
+
+              const pollQuestion =
+                parts[0];
+
+
+              const options =
+                parts
+                  .slice(1)
+                  .slice(0, 12);
+
+
+              if (
+                options.length < 2
+              ) {
+
+                await sock.sendMessage(
+                  jid,
+                  {
+                    text:
+                      "❌ يجب أن يكون هناك خياران على الأقل."
+                  }
+                );
+
+                continue;
+              }
+
 
               console.log(
-                "📝 Question:",
-                quiz.question
+                "📊 Creating poll:",
+                pollQuestion
               );
 
-              console.log(
-                "🔢 Options:",
-                quiz.options
-              );
-
-              console.log(
-                "✅ Correct option:",
-                quiz.correct
-              );
-
-
-              // ----------------------------------------------
-              // SEND REAL WHATSAPP POLL
-              // ----------------------------------------------
 
               await sock.sendMessage(
                 jid,
@@ -868,65 +904,22 @@ async function startBot() {
                   poll: {
 
                     name:
-                      `🇩🇪 ${level} Challenge\n\n${quiz.question}`,
+                      pollQuestion,
 
                     values:
-                      quiz.options,
+                      options,
 
                     selectableCount:
                       1
+
                   }
                 }
               );
 
 
               console.log(
-                "✅ WhatsApp Poll sent!"
+                "✅ Poll sent."
               );
-
-
-              // ----------------------------------------------
-              // SEND EXPLANATION
-              // ----------------------------------------------
-
-              await sock.sendMessage(
-                jid,
-                {
-                  text:
-                    "🗳️ صوتوا على الإجابة الصحيحة!\n\n" +
-                    "💡 بعد التصويت يمكننا لاحقاً إضافة نظام النقاط والنتائج."
-                }
-              );
-
-
-              // ----------------------------------------------
-              // SAVE LAST QUIZ
-              // ----------------------------------------------
-
-              global.lastQuiz = {
-
-                jid:
-                  jid,
-
-                question:
-                  quiz.question,
-
-                options:
-                  quiz.options,
-
-                correct:
-                  quiz.correct,
-
-                explanation:
-                  quiz.explanation,
-
-                level:
-                  level,
-
-                createdAt:
-                  Date.now()
-
-              };
 
 
               continue;
@@ -942,7 +935,7 @@ async function startBot() {
             ) {
 
               console.log(
-                "⏭️ Message ignored - no $"
+                "⏭️ No $ at end. Ignoring."
               );
 
               continue;
@@ -959,18 +952,24 @@ async function startBot() {
                 .trim();
 
 
-            if (!aiQuestion)
+            if (!aiQuestion) {
               continue;
+            }
+
+
+            console.log(
+              "💲 AI TRIGGER DETECTED"
+            );
+
+            console.log(
+              "🤖 Sending to AI:",
+              aiQuestion
+            );
 
 
             // ==================================================
             // ASK AI
             // ==================================================
-
-            console.log(
-              "🤖 Sending to AI..."
-            );
-
 
             const answer =
               await askAI(
@@ -1017,7 +1016,7 @@ async function startBot() {
                 msg.key.remoteJid,
                 {
                   text:
-                    "❌ حدث خطأ أثناء معالجة الطلب.\n\n" +
+                    "❌ حدث خطأ أثناء معالجة الرسالة.\n\n" +
                     "حاول مرة أخرى."
                 }
               );
@@ -1025,14 +1024,12 @@ async function startBot() {
             } catch (sendError) {
 
               console.log(
-                "❌ Could not send error message:",
+                "❌ Could not send error:",
                 sendError.message
               );
             }
           }
-
         }
-
       }
     );
 
@@ -1045,11 +1042,16 @@ async function startBot() {
 
   catch (error) {
 
+    console.log("");
     console.log(
-      "❌ BOT START ERROR:",
+      "❌ BOT START ERROR:"
+    );
+
+    console.log(
       error.message
     );
 
+    console.log("");
 
     console.log(
       "🔄 Restarting in 10 seconds..."
@@ -1065,7 +1067,7 @@ async function startBot() {
 
 
 // ==================================================
-// START BOT
+// START
 // ==================================================
 
 startBot();
