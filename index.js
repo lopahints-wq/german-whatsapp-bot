@@ -11,33 +11,33 @@ const {
 const { Boom } = require("@hapi/boom");
 
 
-// ==========================================
+// ==================================================
 // SERVER
-// ==========================================
+// ==================================================
 
 const app = express();
 
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.send("🇩🇪 German B1 WhatsApp AI Bot is running!");
+  res.send("🇩🇪 German WhatsApp AI Bot is running!");
 });
 
 app.listen(PORT, () => {
-  console.log("🌐 Server started on port " + PORT);
+  console.log(`🌐 Server started on port ${PORT}`);
 });
 
 
-// ==========================================
+// ==================================================
 // GROQ AI
-// ==========================================
+// ==================================================
 
 async function askAI(question) {
 
   const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    throw new Error("GROQ_API_KEY is missing.");
+    throw new Error("GROQ_API_KEY is missing in Render.");
   }
 
   console.log("🧠 Sending message to Groq...");
@@ -50,89 +50,87 @@ async function askAI(question) {
 
       headers: {
         "Content-Type": "application/json",
-        "Authorization": "Bearer " + apiKey
+        "Authorization": `Bearer ${apiKey}`
       },
 
       body: JSON.stringify({
         model: "openai/gpt-oss-20b",
 
-        instructions:
-          "أنت مساعد ذكاء اصطناعي داخل مجموعة WhatsApp لتعلم اللغة الألمانية. " +
+        instructions: `
+أنت مدرس لغة ألمانية داخل مجموعة WhatsApp.
 
-          "أنت مدرس لغة ألمانية من مستوى A1 إلى B1. " +
+مهمتك الأساسية مساعدة الأعضاء على تعلم اللغة الألمانية من A1 إلى B1.
 
-          "إذا كتب المستخدم جملة بالألمانية، صحح أخطاءه واشرح الخطأ بالعربية باختصار. " +
+القواعد:
 
-          "إذا كتب المستخدم بالعربية ويريد ترجمتها، أعطه ترجمة ألمانية طبيعية ومناسبة لمستواه. " +
+1. إذا كتب المستخدم جملة بالألمانية:
+صححها، ثم اشرح الخطأ بالعربية باختصار.
 
-          "إذا سأل عن كلمة ألمانية، اشرح معناها بالعربية وأعط مثالًا ألمانيًا مع الترجمة. " +
+2. إذا كتب المستخدم كلمة ألمانية:
+اشرح معناها بالعربية وأعط مثالاً بالألمانية مع الترجمة.
 
-          "إذا سأل عن قاعدة ألمانية، اشرحها بطريقة سهلة مع أمثلة. " +
+3. إذا كتب المستخدم بالعربية:
+إذا كان يريد ترجمة، أعطه ترجمة ألمانية طبيعية.
 
-          "يمكنك الإجابة عن الأسئلة العامة أيضًا إذا كانت مناسبة. " +
+4. إذا سأل عن قاعدة ألمانية:
+اشرحها بطريقة بسيطة مع مثالين.
 
-          "استخدم العربية في الشرح والألمانية في الأمثلة. " +
+5. إذا طلب تمريناً:
+أنشئ تمريناً مناسباً لمستواه.
 
-          "اجعل الإجابات واضحة ومختصرة ومناسبة لـ WhatsApp. " +
+6. إذا كتب "اختبرني":
+ابدأ معه اختباراً قصيراً في الألمانية.
 
-          "لا تستخدم إجابات طويلة جدًا.",
+7. إذا كان السؤال عاماً:
+أجب عنه بشكل طبيعي.
+
+استخدم العربية للشرح والألمانية للأمثلة.
+
+اجعل الإجابات مناسبة لـ WhatsApp وليست طويلة جداً.
+
+كن ودوداً وواضحاً.
+`,
 
         input: question
       })
     }
   );
 
-
-  // ==========================================
-  // READ RESPONSE
-  // ==========================================
-
   const data = await response.json();
 
+  console.log("📦 Groq response status:", response.status);
 
-  console.log(
-    "📦 Groq response received."
-  );
-
-
-  // ==========================================
+  // ----------------------------------------------
   // GROQ ERROR
-  // ==========================================
+  // ----------------------------------------------
 
   if (!response.ok) {
 
-    console.log("❌ GROQ ERROR:");
-
     console.log(
+      "❌ GROQ ERROR:",
       JSON.stringify(data, null, 2)
     );
 
     throw new Error(
       data?.error?.message ||
-      "Groq request failed."
+      "Groq API request failed."
     );
   }
 
-
-  // ==========================================
+  // ----------------------------------------------
   // GET ANSWER
-  // ==========================================
+  // ----------------------------------------------
 
   let answer = "";
 
-
-  // الطريقة الأولى
+  // الطريقة الرسمية
   if (
-    typeof data.output_text === "string" &&
-    data.output_text.trim()
+    typeof data.output_text === "string"
   ) {
-
     answer = data.output_text.trim();
-
   }
 
-
-  // الطريقة الثانية
+  // احتياط إضافي
   if (
     !answer &&
     Array.isArray(data.output)
@@ -141,24 +139,20 @@ async function askAI(question) {
     for (const item of data.output) {
 
       if (
-        item &&
-        item.type === "message" &&
+        item?.type === "message" &&
         Array.isArray(item.content)
       ) {
 
         for (const content of item.content) {
 
           if (
-            content &&
-            content.type === "output_text" &&
+            content?.type === "output_text" &&
             typeof content.text === "string"
           ) {
 
             answer = content.text.trim();
-
             break;
           }
-
         }
       }
 
@@ -168,15 +162,10 @@ async function askAI(question) {
     }
   }
 
-
-  // ==========================================
-  // FALLBACK
-  // ==========================================
-
   if (!answer) {
 
     console.log(
-      "❌ Groq returned no readable text."
+      "❌ No text returned from Groq."
     );
 
     console.log(
@@ -184,23 +173,19 @@ async function askAI(question) {
     );
 
     throw new Error(
-      "Groq returned no text."
+      "Groq returned an empty answer."
     );
   }
 
-
-  console.log(
-    "✅ AI answer received."
-  );
-
+  console.log("🤖 ANSWER:", answer);
 
   return answer;
 }
 
 
-// ==========================================
-// START WHATSAPP BOT
-// ==========================================
+// ==================================================
+// WHATSAPP
+// ==================================================
 
 async function startBot() {
 
@@ -210,10 +195,9 @@ async function startBot() {
       "🚀 Starting German B1 WhatsApp Bot..."
     );
 
-
-    // ========================================
+    // ----------------------------------------------
     // AUTH
-    // ========================================
+    // ----------------------------------------------
 
     const {
       state,
@@ -222,10 +206,9 @@ async function startBot() {
       "./auth_info"
     );
 
-
-    // ========================================
-    // WHATSAPP SOCKET
-    // ========================================
+    // ----------------------------------------------
+    // CREATE WHATSAPP CONNECTION
+    // ----------------------------------------------
 
     const sock = makeWASocket({
 
@@ -240,23 +223,20 @@ async function startBot() {
       markOnlineOnConnect: false,
 
       syncFullHistory: false
-
     });
 
-
-    // ========================================
+    // ----------------------------------------------
     // SAVE CREDENTIALS
-    // ========================================
+    // ----------------------------------------------
 
     sock.ev.on(
       "creds.update",
       saveCreds
     );
 
-
-    // ========================================
-    // CONNECTION
-    // ========================================
+    // ----------------------------------------------
+    // CONNECTION UPDATE
+    // ----------------------------------------------
 
     sock.ev.on(
       "connection.update",
@@ -267,25 +247,20 @@ async function startBot() {
           lastDisconnect
         } = update;
 
-
-        if (
-          connection === "connecting"
-        ) {
+        // CONNECTING
+        if (connection === "connecting") {
 
           console.log(
             "🔄 Connecting to WhatsApp..."
           );
-
         }
 
-
-        if (
-          connection === "open"
-        ) {
+        // CONNECTED
+        if (connection === "open") {
 
           console.log("");
           console.log(
-            "========================================"
+            "======================================"
           );
 
           console.log(
@@ -293,24 +268,20 @@ async function startBot() {
           );
 
           console.log(
-            "🤖 GERMAN B1 AI BOT IS READY!"
+            "🤖 GERMAN AI BOT IS READY!"
           );
 
           console.log(
-            "========================================"
+            "======================================"
           );
 
           console.log("");
-
         }
 
-
-        if (
-          connection === "close"
-        ) {
+        // DISCONNECTED
+        if (connection === "close") {
 
           let code = 0;
-
 
           try {
 
@@ -320,7 +291,6 @@ async function startBot() {
 
               code =
                 lastDisconnect.error.output.statusCode;
-
             }
 
           } catch (e) {
@@ -328,20 +298,14 @@ async function startBot() {
             console.log(
               "⚠️ Could not read disconnect code."
             );
-
           }
-
 
           console.log(
             "❌ WhatsApp disconnected. Code:",
             code
           );
 
-
-          // ====================================
           // LOGGED OUT
-          // ====================================
-
           if (
             code === DisconnectReason.loggedOut
           ) {
@@ -357,62 +321,45 @@ async function startBot() {
             return;
           }
 
-
-          // ====================================
           // RECONNECT
-          // ====================================
-
           console.log(
             "🔄 Reconnecting in 5 seconds..."
           );
 
-
           setTimeout(
-            () => {
-              startBot();
-            },
+            startBot,
             5000
           );
-
         }
 
       }
     );
 
 
-    // ========================================
-    // PAIRING CODE
-    // ========================================
+    // ==================================================
+    // PAIRING
+    // ==================================================
 
-    if (
-      !state.creds.registered
-    ) {
+    if (!state.creds.registered) {
 
       const phoneNumber =
         process.env.WHATSAPP_NUMBER;
 
-
       if (!phoneNumber) {
 
         console.log(
-          "❌ WHATSAPP_NUMBER is missing!"
+          "❌ WHATSAPP_NUMBER is missing in Render."
         );
 
         return;
       }
 
-
       const cleanNumber =
-        phoneNumber.replace(
-          /\D/g,
-          ""
-        );
-
+        phoneNumber.replace(/\D/g, "");
 
       console.log(
         "📱 Preparing WhatsApp pairing..."
       );
-
 
       await new Promise(
         resolve => setTimeout(
@@ -421,7 +368,6 @@ async function startBot() {
         )
       );
 
-
       try {
 
         const pairingCode =
@@ -429,14 +375,13 @@ async function startBot() {
             cleanNumber
           );
 
-
         console.log("");
         console.log(
-          "========================================"
+          "======================================"
         );
 
         console.log(
-          "📱 WHATSAPP PAIRING CODE"
+          "📱 WHATSAPP PAIRING CODE:"
         );
 
         console.log(
@@ -444,7 +389,7 @@ async function startBot() {
         );
 
         console.log(
-          "========================================"
+          "======================================"
         );
 
         console.log("");
@@ -455,73 +400,53 @@ async function startBot() {
           "❌ Pairing error:",
           error.message
         );
-
       }
-
     }
 
 
-    // ========================================
+    // ==================================================
     // RECEIVE MESSAGES
-    // ========================================
+    // ==================================================
 
     sock.ev.on(
       "messages.upsert",
       async ({ messages }) => {
 
-        for (
-          const msg of messages
-        ) {
+        for (const msg of messages) {
 
           try {
 
-            // ==================================
-            // BASIC CHECKS
-            // ==================================
+            // ------------------------------------------
+            // BASIC CHECK
+            // ------------------------------------------
 
-            if (!msg) {
-              continue;
-            }
+            if (!msg) continue;
 
+            if (!msg.message) continue;
 
-            if (!msg.message) {
-              continue;
-            }
-
-
-            // لا يرد على نفسه
-            if (msg.key.fromMe) {
-              continue;
-            }
-
+            // لا يرد على رسائله الخاصة
+            if (msg.key.fromMe) continue;
 
             const jid =
               msg.key.remoteJid;
 
-
-            if (!jid) {
-              continue;
-            }
+            if (!jid) continue;
 
 
-            // ==================================
+            // ------------------------------------------
             // GROUPS ONLY
-            // ==================================
+            // ------------------------------------------
 
-            if (
-              !jid.endsWith("@g.us")
-            ) {
-
+            if (!jid.endsWith("@g.us")) {
               continue;
             }
 
 
-            // ==================================
-            // GET MESSAGE TEXT
-            // ==================================
+            // ------------------------------------------
+            // GET TEXT
+            // ------------------------------------------
 
             let text = "";
-
 
             if (
               msg.message.conversation
@@ -530,57 +455,58 @@ async function startBot() {
               text =
                 msg.message.conversation;
 
-            } else if (
+            }
+
+            else if (
               msg.message.extendedTextMessage?.text
             ) {
 
               text =
                 msg.message.extendedTextMessage.text;
 
-            } else if (
+            }
+
+            else if (
               msg.message.ephemeralMessage?.message?.conversation
             ) {
 
               text =
                 msg.message.ephemeralMessage.message.conversation;
 
-            } else if (
+            }
+
+            else if (
               msg.message.ephemeralMessage?.message?.extendedTextMessage?.text
             ) {
 
               text =
                 msg.message.ephemeralMessage.message.extendedTextMessage.text;
-
             }
 
 
-            const cleanText =
+            const question =
               text.trim();
 
-
-            if (!cleanText) {
-              continue;
-            }
+            if (!question) continue;
 
 
-            // ==================================
-            // LOG MESSAGE
-            // ==================================
+            // ------------------------------------------
+            // LOG
+            // ------------------------------------------
 
             console.log("");
-
             console.log(
               "📩 GROUP MESSAGE:",
-              cleanText
+              question
             );
 
 
-            // ==================================
-            // !TEST
-            // ==================================
+            // ==================================================
+            // TEST COMMAND
+            // ==================================================
 
             if (
-              cleanText.toLowerCase() === "!test"
+              question.toLowerCase() === "!test"
             ) {
 
               await sock.sendMessage(
@@ -588,27 +514,25 @@ async function startBot() {
                 {
                   text:
                     "🇩🇪🤖 German B1 Bot\n\n" +
-                    "✅ البوت متصل بالمجموعة بنجاح!\n" +
-                    "🧠 الذكاء الاصطناعي جاهز."
+                    "✅ البوت يعمل بشكل صحيح!\n" +
+                    "🧠 Groq AI متصل."
                 }
               );
-
 
               console.log(
                 "✅ Test message sent."
               );
 
-
               continue;
             }
 
 
-            // ==================================
-            // !HELP
-            // ==================================
+            // ==================================================
+            // HELP COMMAND
+            // ==================================================
 
             if (
-              cleanText.toLowerCase() === "!help"
+              question.toLowerCase() === "!help"
             ) {
 
               await sock.sendMessage(
@@ -617,53 +541,45 @@ async function startBot() {
                   text:
                     "🇩🇪🤖 German B1 AI Bot\n\n" +
 
-                    "اكتب أي سؤال مباشرة.\n\n" +
+                    "يمكنك كتابة أي سؤال مباشرة.\n\n" +
 
-                    "مثال:\n" +
-                    "ما معنى gehen؟\n\n" +
+                    "أمثلة:\n\n" +
 
-                    "أو:\n" +
-                    "Hallo, wie geht es dir?\n\n" +
+                    "🇩🇪 ما معنى gehen؟\n\n" +
 
-                    "أو:\n" +
-                    "صحح:\n" +
-                    "Ich habe gestern nach Berlin gefahren."
+                    "🇩🇪 صحح:\n" +
+                    "Ich habe gestern nach Berlin gefahren.\n\n" +
+
+                    "🇩🇪 اشرح لي Akkusativ\n\n" +
+
+                    "🇩🇪 اختبرني في A2"
                 }
               );
-
 
               continue;
             }
 
 
-            // ==================================
+            // ==================================================
             // SEND TO AI
-            // ==================================
+            // ==================================================
 
             console.log(
               "🤖 Sending to AI..."
             );
 
 
-            // ==================================
+            // ------------------------------------------
             // ASK AI
-            // ==================================
+            // ------------------------------------------
 
             const answer =
-              await askAI(
-                cleanText
-              );
+              await askAI(question);
 
 
-            console.log(
-              "🤖 ANSWER:",
-              answer
-            );
-
-
-            // ==================================
-            // SEND ANSWER TO WHATSAPP
-            // ==================================
+            // ------------------------------------------
+            // SEND ANSWER
+            // ------------------------------------------
 
             await sock.sendMessage(
               jid,
@@ -679,18 +595,19 @@ async function startBot() {
               "✅ AI reply sent."
             );
 
+          }
 
-          } catch (error) {
 
-            // ==================================
-            // MESSAGE ERROR
-            // ==================================
+          // ==================================================
+          // MESSAGE ERROR
+          // ==================================================
+
+          catch (error) {
 
             console.log(
               "❌ Message error:",
               error.message
             );
-
 
             try {
 
@@ -699,7 +616,7 @@ async function startBot() {
                 {
                   text:
                     "❌ حدث خطأ أثناء معالجة السؤال.\n\n" +
-                    "راجع Logs في Render."
+                    "حاول مرة أخرى."
                 }
               );
 
@@ -709,44 +626,40 @@ async function startBot() {
                 "❌ Could not send error message:",
                 sendError.message
               );
-
             }
-
           }
-
         }
-
       }
     );
 
+  }
 
-  } catch (error) {
+
+  // ==================================================
+  // START ERROR
+  // ==================================================
+
+  catch (error) {
 
     console.log(
       "❌ BOT START ERROR:",
       error.message
     );
 
-
     console.log(
       "🔄 Restarting in 10 seconds..."
     );
 
-
     setTimeout(
-      () => {
-        startBot();
-      },
+      startBot,
       10000
     );
-
   }
-
 }
 
 
-// ==========================================
-// START
-// ==========================================
+// ==================================================
+// START BOT
+// ==================================================
 
 startBot();
