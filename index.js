@@ -215,63 +215,6 @@ const quizQuestions = [
 
 
 // ==================================================
-// EXERCISES
-// ==================================================
-
-const exercises = [
-
-  {
-    question:
-      "🇩🇪 أكمل الجملة:\n\n" +
-      "Ich ___ jeden Morgen Kaffee.\n\n" +
-      "1️⃣ trinke\n" +
-      "2️⃣ trinkt\n" +
-      "3️⃣ trinken\n" +
-      "4️⃣ getrunken",
-
-    answer: 1
-  },
-
-  {
-    question:
-      "🇩🇪 اختر الإجابة الصحيحة:\n\n" +
-      "Gestern ___ ich Fußball gespielt.\n\n" +
-      "1️⃣ bin\n" +
-      "2️⃣ habe\n" +
-      "3️⃣ ist\n" +
-      "4️⃣ hat",
-
-    answer: 2
-  },
-
-  {
-    question:
-      "🇩🇪 اختر الإجابة الصحيحة:\n\n" +
-      "Ich gehe ___ Supermarkt.\n\n" +
-      "1️⃣ im\n" +
-      "2️⃣ in den\n" +
-      "3️⃣ auf der\n" +
-      "4️⃣ mit dem",
-
-    answer: 2
-  },
-
-  {
-    question:
-      "🇩🇪 اختر الإجابة الصحيحة:\n\n" +
-      "Er kann sehr gut Deutsch ___.\n\n" +
-      "1️⃣ sprechen\n" +
-      "2️⃣ spricht\n" +
-      "3️⃣ gesprochen\n" +
-      "4️⃣ sprichst",
-
-    answer: 1
-  }
-
-];
-
-
-// ==================================================
 // START QUIZ
 // ==================================================
 
@@ -330,53 +273,406 @@ async function startQuiz(sock, jid, msg) {
 
 
 // ==================================================
-// START EXERCISE
+// AI EXERCISE GENERATOR
+// ==================================================
+
+async function generateAIExercise(userLevel) {
+
+  const apiKey =
+    process.env.GROQ_API_KEY;
+
+
+  if (!apiKey) {
+
+    throw new Error(
+      "GROQ_API_KEY is missing in Render."
+    );
+
+  }
+
+
+  console.log(
+    "🧠 Generating AI German exercise..."
+  );
+
+
+  const response =
+    await fetch(
+      "https://api.groq.com/openai/v1/responses",
+      {
+        method: "POST",
+
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${apiKey}`
+        },
+
+        body: JSON.stringify({
+
+          model:
+            "openai/gpt-oss-20b",
+
+          instructions: `
+أنت مدرس لغة ألمانية محترف.
+
+أنشئ تمرينًا واحدًا جديدًا باللغة الألمانية لمتعلم من مستوى A1 إلى B1.
+
+المستوى الحالي للمتعلم:
+${userLevel}
+
+المطلوب:
+
+- اختر موضوعًا مناسبًا للمستوى.
+- يمكن أن يكون التمرين عن:
+  Grammatik
+  Wortschatz
+  Artikel
+  Akkusativ
+  Dativ
+  Perfekt
+  Präpositionen
+  Satzbau
+  Nebensätze
+  Konjunktiv II
+  أو ترجمة قصيرة.
+
+- يجب أن يحتوي السؤال على 4 خيارات فقط.
+- يجب أن تكون إجابة واحدة فقط صحيحة.
+- لا تجعل الخيارات متشابهة بشكل يسبب أكثر من إجابة صحيحة.
+- لا تستخدم أسئلة شديدة الصعوبة بالنسبة للمستوى.
+- لا تعطِ الإجابة في نص السؤال.
+- أنشئ تمرينًا مختلفًا في كل مرة قدر الإمكان.
+
+أرجع النتيجة JSON فقط بهذا الشكل:
+
+{
+  "level": "A1",
+  "question": "اختر الجملة الصحيحة:",
+  "options": [
+    "Ich gehe jeden Tag zur Schule.",
+    "Ich geht jeden Tag zur Schule.",
+    "Ich gehen jeden Tag zur Schule.",
+    "Ich gegangen jeden Tag zur Schule."
+  ],
+  "answer": 1,
+  "explanation": "مع ich نستخدم gehe."
+}
+
+مهم جدًا:
+answer يجب أن يكون رقمًا من 1 إلى 4.
+لا تضف Markdown.
+لا تضف أي نص خارج JSON.
+`,
+
+          input:
+            `أنشئ تمرينًا جديدًا لمستوى ${userLevel}.`
+
+        })
+      }
+    );
+
+
+  const data =
+    await response.json();
+
+
+  console.log(
+    "📦 AI Exercise status:",
+    response.status
+  );
+
+
+  if (!response.ok) {
+
+    console.log(
+      "❌ AI EXERCISE ERROR:",
+      JSON.stringify(
+        data,
+        null,
+        2
+      )
+    );
+
+
+    throw new Error(
+      data?.error?.message ||
+      "AI exercise request failed."
+    );
+
+  }
+
+
+  let answerText = "";
+
+
+  if (
+    typeof data.output_text === "string"
+  ) {
+
+    answerText =
+      data.output_text.trim();
+
+  }
+
+
+  if (
+    !answerText &&
+    Array.isArray(data.output)
+  ) {
+
+    for (
+      const item of data.output
+    ) {
+
+      if (
+        item?.type === "message" &&
+        Array.isArray(item.content)
+      ) {
+
+        for (
+          const content of item.content
+        ) {
+
+          if (
+            content?.type === "output_text" &&
+            typeof content.text === "string"
+          ) {
+
+            answerText =
+              content.text.trim();
+
+            break;
+
+          }
+
+        }
+
+      }
+
+
+      if (answerText) {
+        break;
+      }
+
+    }
+
+  }
+
+
+  if (!answerText) {
+
+    throw new Error(
+      "AI returned an empty exercise."
+    );
+
+  }
+
+
+  // ----------------------------------------------
+  // إزالة Markdown إذا رجعه AI
+  // ----------------------------------------------
+
+  answerText =
+    answerText
+      .replace(/^```json/i, "")
+      .replace(/^```/, "")
+      .replace(/```$/, "")
+      .trim();
+
+
+  let exercise;
+
+
+  try {
+
+    exercise =
+      JSON.parse(answerText);
+
+  }
+
+  catch (error) {
+
+    console.log(
+      "❌ Could not parse AI exercise:"
+    );
+
+    console.log(
+      answerText
+    );
+
+    throw new Error(
+      "AI exercise returned invalid JSON."
+    );
+
+  }
+
+
+  // ----------------------------------------------
+  // التحقق من البيانات
+  // ----------------------------------------------
+
+  if (
+    !exercise ||
+    typeof exercise.question !== "string" ||
+    !Array.isArray(exercise.options) ||
+    exercise.options.length !== 4 ||
+    !Number.isInteger(exercise.answer) ||
+    exercise.answer < 1 ||
+    exercise.answer > 4
+  ) {
+
+    console.log(
+      "❌ Invalid AI exercise:",
+      JSON.stringify(
+        exercise,
+        null,
+        2
+      )
+    );
+
+
+    throw new Error(
+      "AI generated an invalid exercise."
+    );
+
+  }
+
+
+  return exercise;
+
+}
+
+
+// ==================================================
+// START AI EXERCISE
 // ==================================================
 
 async function startExercise(sock, jid, msg) {
 
-  const userId = getUserId(msg);
-
-  const randomIndex =
-    Math.floor(
-      Math.random() * exercises.length
-    );
-
-  const exercise =
-    exercises[randomIndex];
+  const userId =
+    getUserId(msg);
 
 
-  if (!activeQuizzes[jid]) {
-    activeQuizzes[jid] = {};
-  }
+  const score =
+    getScore(userId);
 
 
-  activeQuizzes[jid][userId] = {
+  // ----------------------------------------------
+  // تحديد مستوى المستخدم
+  // ----------------------------------------------
 
-    answer: exercise.answer,
-    type: "exercise"
-
-  };
+  const userLevel =
+    getLevel(score.points);
 
 
-  const score = getScore(userId);
-
-  score.exercises += 1;
-
+  // ----------------------------------------------
+  // رسالة انتظار
+  // ----------------------------------------------
 
   await sock.sendMessage(
     jid,
     {
       text:
-        "📝🇩🇪 *German Exercise*\n\n" +
-
-        exercise.question +
-
-        "\n\n" +
-
-        "💡 أرسل رقم الإجابة فقط."
+        "🧠🇩🇪 جاري إنشاء تمرين جديد بالذكاء الاصطناعي...\n\n" +
+        `📚 مستواك الحالي: ${userLevel}`
     }
   );
+
+
+  try {
+
+    const exercise =
+      await generateAIExercise(
+        userLevel
+      );
+
+
+    if (!activeQuizzes[jid]) {
+      activeQuizzes[jid] = {};
+    }
+
+
+    activeQuizzes[jid][userId] = {
+
+      answer:
+        exercise.answer,
+
+      explanation:
+        exercise.explanation ||
+        "",
+
+      level:
+        exercise.level ||
+        userLevel,
+
+      type:
+        "ai-exercise"
+
+    };
+
+
+    score.exercises += 1;
+
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+
+          "🧠🇩🇪 *AI German Exercise*\n\n" +
+
+          `📚 المستوى: ${
+            exercise.level || userLevel
+          }\n\n` +
+
+          exercise.question +
+
+          "\n\n" +
+
+          "1️⃣ " +
+          exercise.options[0] +
+
+          "\n" +
+
+          "2️⃣ " +
+          exercise.options[1] +
+
+          "\n" +
+
+          "3️⃣ " +
+          exercise.options[2] +
+
+          "\n" +
+
+          "4️⃣ " +
+          exercise.options[3] +
+
+          "\n\n" +
+
+          "💡 أرسل رقم الإجابة فقط."
+      }
+    );
+
+  }
+
+  catch (error) {
+
+    console.log(
+      "❌ AI exercise error:",
+      error.message
+    );
+
+
+    await sock.sendMessage(
+      jid,
+      {
+        text:
+          "❌ لم أستطع إنشاء التمرين الآن.\n\n" +
+          "حاول مرة أخرى بعد قليل."
+      }
+    );
+
+  }
 
 }
 
@@ -406,7 +702,9 @@ async function handleQuizAnswer(
   }
 
 
-  if (!/^[1-4]$/.test(text)) {
+  if (
+    !/^[1-4]$/.test(text)
+  ) {
 
     return false;
 
@@ -434,6 +732,21 @@ async function handleQuizAnswer(
     score.correct += 1;
 
 
+    let extra =
+      "";
+
+
+    if (
+      quiz.explanation
+    ) {
+
+      extra =
+        "\n\n📖 " +
+        quiz.explanation;
+
+    }
+
+
     await sock.sendMessage(
       jid,
       {
@@ -444,9 +757,11 @@ async function handleQuizAnswer(
 
           `⭐ نقاطك: ${score.points} XP\n` +
 
-          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
+          `🎯 مستواك: ${getLevel(score.points)}` +
 
-          "👏 أحسنت!"
+          extra +
+
+          "\n\n👏 أحسنت!"
       }
     );
 
@@ -454,7 +769,19 @@ async function handleQuizAnswer(
 
   else {
 
-    score.wrong += 1;
+    let explanation =
+      "";
+
+
+    if (
+      quiz.explanation
+    ) {
+
+      explanation =
+        "\n\n📖 " +
+        quiz.explanation;
+
+    }
 
 
     await sock.sendMessage(
@@ -467,9 +794,11 @@ async function handleQuizAnswer(
 
           `⭐ نقاطك: ${score.points} XP\n` +
 
-          `🎯 مستواك: ${getLevel(score.points)}\n\n` +
+          `🎯 مستواك: ${getLevel(score.points)}` +
 
-          "💪 حاول مرة أخرى!"
+          explanation +
+
+          "\n\n💪 حاول مرة أخرى!"
       }
     );
 
@@ -539,7 +868,7 @@ async function sendRanking(sock, jid) {
       {
         text:
           "🏆 لا توجد نقاط بعد.\n\n" +
-          "ابدأ بـ !quiz"
+          "ابدأ بـ !quiz أو !exercise"
       }
     );
 
@@ -595,7 +924,7 @@ async function sendRanking(sock, jid) {
 
 
 // ==================================================
-// GROQ AI
+// GROQ AI - NORMAL QUESTIONS
 // ==================================================
 
 async function askAI(question) {
@@ -616,6 +945,7 @@ async function askAI(question) {
   console.log(
     "🧠 Sending message to Groq..."
   );
+
 
   console.log(
     "❓ Question:",
@@ -674,7 +1004,8 @@ async function askAI(question) {
 كن ودوداً وواضحاً.
 `,
 
-          input: question
+          input:
+            question
 
         })
       }
@@ -908,6 +1239,10 @@ async function startBot() {
 
           console.log(
             "🎯 QUIZ SYSTEM IS READY!"
+          );
+
+          console.log(
+            "🧠 AI EXERCISE SYSTEM IS READY!"
           );
 
           console.log(
@@ -1208,12 +1543,8 @@ async function startBot() {
 
 
             // ==================================================
-            // COMMANDS - WORK WITHOUT $
-            // ==================================================
-
-            // ----------------------------------------------
             // TEST
-            // ----------------------------------------------
+            // ==================================================
 
             if (
               question.toLowerCase() ===
@@ -1227,7 +1558,8 @@ async function startBot() {
                     "🇩🇪🤖 German B1 Bot\n\n" +
                     "✅ البوت يعمل بشكل صحيح!\n" +
                     "🧠 Groq AI متصل.\n" +
-                    "🎯 نظام المسابقات يعمل."
+                    "🎯 نظام المسابقات يعمل.\n" +
+                    "🧠 التمارين يتم إنشاؤها بالذكاء الاصطناعي."
                 }
               );
 
@@ -1237,9 +1569,9 @@ async function startBot() {
             }
 
 
-            // ----------------------------------------------
+            // ==================================================
             // HELP
-            // ----------------------------------------------
+            // ==================================================
 
             if (
               question.toLowerCase() ===
@@ -1255,8 +1587,8 @@ async function startBot() {
                     "🎯 !quiz\n" +
                     "ابدأ مسابقة واحصل على نقاط.\n\n" +
 
-                    "📝 !exercise\n" +
-                    "ابدأ تمريناً.\n\n" +
+                    "🧠 !exercise\n" +
+                    "أنشئ تمرينًا جديدًا بالذكاء الاصطناعي.\n\n" +
 
                     "⭐ !points\n" +
                     "شاهد نقاطك ومستواك.\n\n" +
@@ -1264,7 +1596,7 @@ async function startBot() {
                     "🏆 !ranking\n" +
                     "شاهد ترتيب الأعضاء.\n\n" +
 
-                    "💲 للذكاء الاصطناعي يجب أن تبدأ الرسالة بـ $.\n\n" +
+                    "💲 الذكاء الاصطناعي العادي يجب أن تبدأ رسالتك بـ $.\n\n" +
 
                     "مثال:\n" +
                     "$Was bedeutet gehen?"
@@ -1277,9 +1609,9 @@ async function startBot() {
             }
 
 
-            // ----------------------------------------------
+            // ==================================================
             // QUIZ
-            // ----------------------------------------------
+            // ==================================================
 
             if (
               question.toLowerCase() ===
@@ -1298,9 +1630,9 @@ async function startBot() {
             }
 
 
-            // ----------------------------------------------
-            // EXERCISE
-            // ----------------------------------------------
+            // ==================================================
+            // AI EXERCISE
+            // ==================================================
 
             if (
               question.toLowerCase() ===
@@ -1319,9 +1651,9 @@ async function startBot() {
             }
 
 
-            // ----------------------------------------------
+            // ==================================================
             // POINTS
-            // ----------------------------------------------
+            // ==================================================
 
             if (
               question.toLowerCase() ===
@@ -1340,9 +1672,9 @@ async function startBot() {
             }
 
 
-            // ----------------------------------------------
+            // ==================================================
             // RANKING
-            // ----------------------------------------------
+            // ==================================================
 
             if (
               question.toLowerCase() ===
@@ -1361,7 +1693,7 @@ async function startBot() {
 
 
             // ==================================================
-            // QUIZ ANSWER
+            // QUIZ / EXERCISE ANSWER
             // ==================================================
 
             if (
@@ -1425,12 +1757,13 @@ async function startBot() {
 
 
             // ==================================================
-            // SEND TO AI
+            // ASK NORMAL AI
             // ==================================================
 
             console.log(
               "🤖 Sending to AI..."
             );
+
 
             console.log(
               "❓ AI Question:",
