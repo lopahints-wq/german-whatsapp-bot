@@ -1,11 +1,17 @@
 const express = require("express");
 const pino = require("pino");
+const fs = require("fs");
+const path = require("path");
+const crypto = require("crypto");
 
 const {
   default: makeWASocket,
   useMultiFileAuthState,
   DisconnectReason,
-  Browsers
+  Browsers,
+  decryptPollVote,
+  getKeyAuthor,
+  jidNormalizedUser
 } = require("@whiskeysockets/baileys");
 
 const { Boom } = require("@hapi/boom");
@@ -16,14 +22,23 @@ const { Boom } = require("@hapi/boom");
 
 const app = express();
 
-const PORT = process.env.PORT || 10000;
+const PORT =
+  process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.send("🇩🇪 German B1 AI Bot is running!");
+
+  res.send(
+    "🇩🇪 German B1 AI Bot is running!"
+  );
+
 });
 
 app.listen(PORT, () => {
-  console.log(`🌐 Server started on port ${PORT}`);
+
+  console.log(
+    `🌐 Server started on port ${PORT}`
+  );
+
 });
 
 // ==================================================
@@ -34,8 +49,124 @@ const ALLOWED_GROUPS = [
   "120363410722950290@g.us"
 ];
 
-// محتوى تلقائي كل دقيقة
-const CONTENT_INTERVAL = 60 * 1000;
+// كل دقيقة
+const CONTENT_INTERVAL =
+  60 * 1000;
+
+// نقاط الإجابة الصحيحة
+const POINTS_PER_CORRECT = 10;
+
+// ==================================================
+// FILE STORAGE
+// ==================================================
+
+const POINTS_FILE =
+  path.join(
+    __dirname,
+    "points.json"
+  );
+
+const POLLS_FILE =
+  path.join(
+    __dirname,
+    "polls.json"
+  );
+
+// ==================================================
+// LOAD JSON
+// ==================================================
+
+function loadJSON(file, fallback) {
+
+  try {
+
+    if (
+      !fs.existsSync(file)
+    ) {
+
+      fs.writeFileSync(
+        file,
+        JSON.stringify(
+          fallback,
+          null,
+          2
+        )
+      );
+
+      return fallback;
+
+    }
+
+    const data =
+      fs.readFileSync(
+        file,
+        "utf8"
+      );
+
+    return JSON.parse(data);
+
+  }
+
+  catch (error) {
+
+    console.log(
+      "⚠️ JSON load error:",
+      file,
+      error.message
+    );
+
+    return fallback;
+
+  }
+
+}
+
+// ==================================================
+// SAVE JSON
+// ==================================================
+
+function saveJSON(file, data) {
+
+  try {
+
+    fs.writeFileSync(
+      file,
+      JSON.stringify(
+        data,
+        null,
+        2
+      )
+    );
+
+  }
+
+  catch (error) {
+
+    console.log(
+      "❌ JSON save error:",
+      file,
+      error.message
+    );
+
+  }
+
+}
+
+// ==================================================
+// DATA
+// ==================================================
+
+let points =
+  loadJSON(
+    POINTS_FILE,
+    {}
+  );
+
+let polls =
+  loadJSON(
+    POLLS_FILE,
+    {}
+  );
 
 // ==================================================
 // SOCKET
@@ -43,19 +174,20 @@ const CONTENT_INTERVAL = 60 * 1000;
 
 let globalSock = null;
 
-// لمنع تشغيل أكثر من مؤقت عند إعادة الاتصال
-let contentIntervalStarted = false;
+let contentInterval = null;
 
 // ==================================================
 // CONTENT TYPES
 // ==================================================
 
 const CONTENT_TYPES = [
+
   "dialogue",
   "word",
   "grammar",
   "verbs",
   "situation"
+
 ];
 
 let contentIndex = 0;
@@ -65,6 +197,7 @@ let contentIndex = 0;
 // ==================================================
 
 const TOPICS = [
+
   "في السوبرماركت",
   "في المقهى",
   "في المطعم",
@@ -90,6 +223,7 @@ const TOPICS = [
   "الدراسة",
   "الجامعة",
   "العمل في المكتب"
+
 ];
 
 // ==================================================
@@ -100,7 +234,8 @@ function getRandomTopic() {
 
   return TOPICS[
     Math.floor(
-      Math.random() * TOPICS.length
+      Math.random() *
+      TOPICS.length
     )
   ];
 
@@ -121,6 +256,124 @@ function getNextContentType() {
   contentIndex++;
 
   return type;
+
+}
+
+// ==================================================
+// SHA256
+// ==================================================
+
+function sha256(text) {
+
+  return crypto
+    .createHash("sha256")
+    .update(
+      Buffer.from(text)
+    )
+    .digest("hex");
+
+}
+
+// ==================================================
+// POINTS SYSTEM
+// ==================================================
+
+function ensureUser(jid, name) {
+
+  if (!points[jid]) {
+
+    points[jid] = {
+
+      points: 0,
+
+      correct: 0,
+
+      wrong: 0,
+
+      name:
+        name ||
+        jid
+
+    };
+
+  }
+
+  else if (
+    name &&
+    name !== jid
+  ) {
+
+    points[jid].name =
+      name;
+
+  }
+
+}
+
+// ==================================================
+// ADD POINTS
+// ==================================================
+
+function addPoints(
+  jid,
+  name,
+  amount
+) {
+
+  ensureUser(
+    jid,
+    name
+  );
+
+  points[jid].points +=
+    amount;
+
+  if (amount > 0) {
+
+    points[jid].correct++;
+
+  }
+
+  else {
+
+    points[jid].wrong++;
+
+  }
+
+  saveJSON(
+    POINTS_FILE,
+    points
+  );
+
+}
+
+// ==================================================
+// GET USER POINTS
+// ==================================================
+
+function getUserPoints(jid) {
+
+  ensureUser(jid);
+
+  return points[jid];
+
+}
+
+// ==================================================
+// LEADERBOARD
+// ==================================================
+
+function getLeaderboard() {
+
+  return Object.entries(points)
+
+    .sort(
+      (a, b) =>
+        b[1].points -
+        a[1].points
+    )
+
+    .slice(0, 10);
 
 }
 
@@ -162,18 +415,19 @@ async function askAI(question) {
 
         },
 
-        body: JSON.stringify({
+        body:
+          JSON.stringify({
 
-          model:
-            "openai/gpt-oss-20b",
+            model:
+              "openai/gpt-oss-20b",
 
-          instructions: `
+            instructions: `
 
 أنت مدرس لغة ألمانية متخصص في مستوى B1 فقط.
 
 مهمتك إنشاء محتوى تعليمي قصير جداً لمجموعة WhatsApp.
 
-القواعد المهمة:
+القواعد:
 
 1. استخدم مستوى B1 فقط.
 2. لا تستخدم شرحاً طويلاً.
@@ -184,10 +438,8 @@ async function askAI(question) {
 7. لا تضف مقدمات طويلة.
 8. لا تستخدم Markdown tables.
 9. لا تكتب أكثر مما هو مطلوب.
-10. إذا كان النوع يحتاج Poll، يجب أن يكون هناك 3 اختيارات فقط.
+10. إذا كان النوع يحتاج Poll يجب أن يكون هناك 3 اختيارات فقط.
 11. يجب أن تكون إجابة Poll واحدة صحيحة فقط.
-
-أنواع المحتوى:
 
 DIALOGUE:
 
@@ -211,7 +463,8 @@ GRAMMAR:
 
 VERBS:
 
-أرسل 5 أفعال ألمانية مهمة.
+5 أفعال ألمانية مهمة.
+
 لكل فعل:
 
 Infinitiv
@@ -219,18 +472,14 @@ Präteritum
 Perfekt
 المعنى بالعربية.
 
-بدون شرح طويل.
-
 SITUATION:
 
-موقف عملي قصير B1 من الحياة اليومية.
+موقف عملي قصير B1.
 4 إلى 6 أسطر.
 ثم سؤال واحد.
 3 اختيارات فقط.
 
-إذا كان النوع DIALOGUE أو SITUATION:
-
-يجب أن يكون الناتج بهذا الشكل بالضبط:
+إذا كان DIALOGUE أو SITUATION:
 
 TYPE:
 DIALOGUE
@@ -239,10 +488,10 @@ TITLE:
 عنوان قصير
 
 CONTENT:
-المحتوى هنا
+المحتوى
 
 QUESTION:
-السؤال هنا
+السؤال
 
 OPTION1:
 الاختيار الأول
@@ -256,13 +505,7 @@ OPTION3:
 ANSWER:
 1
 
-أو:
-
-ANSWER: 2
-
-أو:
-
-ANSWER: 3
+أو 2 أو 3 فقط.
 
 إذا كان WORD:
 
@@ -318,13 +561,13 @@ VERB4:
 VERB5:
 الفعل | Präteritum | Perfekt | المعنى
 
-ممنوع إضافة كلام خارج هذه الصيغة.
-
+ممنوع إضافة كلام خارج الصيغة.
 `,
 
-          input: question
+            input:
+              question
 
-        })
+          })
 
       }
     );
@@ -333,7 +576,7 @@ VERB5:
     await response.json();
 
   console.log(
-    "📦 Groq content status:",
+    "📦 Groq status:",
     response.status
   );
 
@@ -372,16 +615,21 @@ VERB5:
   ) {
 
     for (
-      const item of data.output
+      const item
+      of data.output
     ) {
 
       if (
-        item?.type === "message" &&
-        Array.isArray(item.content)
+        item?.type ===
+          "message" &&
+        Array.isArray(
+          item.content
+        )
       ) {
 
         for (
-          const content of item.content
+          const content
+          of item.content
         ) {
 
           if (
@@ -416,10 +664,6 @@ VERB5:
     );
 
   }
-
-  console.log(
-    "🤖 AI content generated."
-  );
 
   return answer;
 
@@ -463,93 +707,49 @@ async function askChatAI(question) {
 
         },
 
-        body: JSON.stringify({
+        body:
+          JSON.stringify({
 
-          model:
-            "openai/gpt-oss-20b",
+            model:
+              "openai/gpt-oss-20b",
 
-          instructions: `
+            instructions: `
 
-أنت مساعد ومدرس لغة ألمانية بمستوى B1 داخل مجموعة WhatsApp.
+أنت مساعد ومدرس ألمانية لمجموعة WhatsApp.
 
-هذه محادثة عادية مع عضو في المجموعة.
+المستخدم قد يكتب بالعربية أو الألمانية.
 
-مهم جداً:
+إذا سأل سؤالاً عن اللغة الألمانية:
 
-1. أجب مباشرة على سؤال المستخدم.
-2. لا تنشئ درساً تلقائياً إلا إذا طلب المستخدم ذلك.
-3. لا تنشئ Poll إلا إذا طلب المستخدم Poll صراحة.
-4. لا تستخدم TYPE.
-5. لا تستخدم TITLE.
-6. لا تستخدم OPTION1.
-7. لا تستخدم OPTION2.
-8. لا تستخدم OPTION3.
-9. لا تستخدم ANSWER.
-10. لا تحول كل سؤال إلى تمرين.
-11. إذا كتب المستخدم Hi أو Hallo أو هاي، رد عليه بشكل طبيعي.
-12. إذا سأل عن كلمة ألمانية، اشرح معناها بالعربية وأعط مثالاً ألمانياً قصيراً.
-13. إذا سأل عن قاعدة ألمانية، اشرحها ببساطة وبمستوى B1.
-14. إذا كتب جملة ألمانية فيها خطأ، صححها واشرح الخطأ باختصار.
-15. إذا كتب بالعربية، افهم السؤال وأجب بالعربية، ويمكنك إضافة الألمانية عند الحاجة.
-16. إذا كتب بالألمانية، يمكنك الرد بالألمانية مع شرح عربي قصير عند الحاجة.
-17. لا تستخدم مستوى أعلى من B1 إلا إذا كان ضرورياً للشرح.
-18. كن مختصراً ومفيداً.
-19. لا تكتب مقدمة طويلة.
-20. لا تستخدم Markdown tables.
-21. لا تقل إنك لا تستطيع الإجابة إذا كان السؤال متعلقاً بتعلم الألمانية.
-22. لا تخرج عن موضوع تعلم الألمانية إلا إذا كان السؤال تحية أو سؤالاً بسيطاً.
+- أجب بمستوى B1.
+- اشرح بالعربية باختصار.
+- أعط مثالاً ألمانياً عند الحاجة.
+- ترجم المثال للعربية.
 
-أمثلة:
+إذا كتب المستخدم تحية مثل:
+hi
+hello
+hallo
+السلام عليكم
 
-المستخدم:
-Hi
+فرد عليه بشكل طبيعي.
 
-الرد:
-Hallo! 👋 Wie geht es dir?
+إذا سأل سؤالاً عاماً، أجب عنه بشكل طبيعي.
 
-المستخدم:
-هاي
+لا تستخدم صيغة:
+TYPE:
+TITLE:
+OPTION1:
 
-الرد:
-Hallo! 👋 Wie geht es dir?
+هذه الصيغة مخصصة للمحتوى التلقائي فقط.
 
-المستخدم:
-ما معنى nachfragen؟
-
-الرد:
-🇩🇪 nachfragen = يستفسر / يسأل عن شيء
-
-Beispiel:
-Ich muss beim Hotel nachfragen.
-
-🇸🇦 يجب أن أستفسر من الفندق.
-
-المستخدم:
-صحح لي:
-Ich habe gestern nach Berlin gefahren.
-
-الرد:
-الصحيح:
-
-Ich bin gestern nach Berlin gefahren.
-
-لأن الفعل "fahren" هنا يستخدم "sein" في Perfekt عندما يدل على الانتقال.
-
-المستخدم:
-اشرح لي Perfekt
-
-الرد:
-Perfekt هو زمن نستخدمه كثيراً للحديث عن الماضي.
-
-مثال:
-Ich habe Deutsch gelernt.
-🇸🇦 لقد تعلمت الألمانية.
-
+كن مختصراً ومفيداً.
 `,
 
-          input: question
+            input:
+              question
 
-        })
+          })
 
       }
     );
@@ -558,7 +758,7 @@ Ich habe Deutsch gelernt.
     await response.json();
 
   console.log(
-    "📦 Groq chat status:",
+    "📦 Chat AI status:",
     response.status
   );
 
@@ -597,16 +797,21 @@ Ich habe Deutsch gelernt.
   ) {
 
     for (
-      const item of data.output
+      const item
+      of data.output
     ) {
 
       if (
-        item?.type === "message" &&
-        Array.isArray(item.content)
+        item?.type ===
+          "message" &&
+        Array.isArray(
+          item.content
+        )
       ) {
 
         for (
-          const content of item.content
+          const content
+          of item.content
         ) {
 
           if (
@@ -642,16 +847,12 @@ Ich habe Deutsch gelernt.
 
   }
 
-  console.log(
-    "🤖 Chat answer generated."
-  );
-
   return answer;
 
 }
 
 // ==================================================
-// PARSE FIELD
+// GET FIELD
 // ==================================================
 
 function getField(
@@ -690,49 +891,64 @@ function parsePollContent(text) {
     getField(
       text,
       "TYPE",
-      ["TITLE", "CONTENT"]
+      [
+        "TITLE",
+        "CONTENT"
+      ]
     );
 
   const title =
     getField(
       text,
       "TITLE",
-      ["CONTENT"]
+      [
+        "CONTENT"
+      ]
     );
 
   const content =
     getField(
       text,
       "CONTENT",
-      ["QUESTION"]
+      [
+        "QUESTION"
+      ]
     );
 
   const question =
     getField(
       text,
       "QUESTION",
-      ["OPTION1"]
+      [
+        "OPTION1"
+      ]
     );
 
   const option1 =
     getField(
       text,
       "OPTION1",
-      ["OPTION2"]
+      [
+        "OPTION2"
+      ]
     );
 
   const option2 =
     getField(
       text,
       "OPTION2",
-      ["OPTION3"]
+      [
+        "OPTION3"
+      ]
     );
 
   const option3 =
     getField(
       text,
       "OPTION3",
-      ["ANSWER"]
+      [
+        "ANSWER"
+      ]
     );
 
   const answer =
@@ -748,7 +964,9 @@ function parsePollContent(text) {
     !option1 ||
     !option2 ||
     !option3 ||
-    !/^[123]$/.test(answer)
+    !/^[123]$/.test(
+      answer
+    )
   ) {
 
     console.log(
@@ -764,14 +982,19 @@ function parsePollContent(text) {
   return {
 
     type,
+
     title,
+
     content,
+
     question,
 
     options: [
+
       option1,
       option2,
       option3
+
     ],
 
     answer:
@@ -805,7 +1028,9 @@ function parseWord(text) {
     getField(
       text,
       "EXAMPLE",
-      ["EXAMPLE_TRANSLATION"]
+      [
+        "EXAMPLE_TRANSLATION"
+      ]
     );
 
   const exampleTranslation =
@@ -905,16 +1130,13 @@ function parseVerbs(text) {
     i++
   ) {
 
-    const nextField =
-      i < 5
-        ? [`VERB${i + 1}`]
-        : [];
-
     const value =
       getField(
         text,
         `VERB${i}`,
-        nextField
+        [
+          `VERB${i + 1}`
+        ]
       );
 
     if (value) {
@@ -964,18 +1186,14 @@ async function generateContent() {
   ) {
 
     instruction = `
-
 النوع: DIALOGUE
 
 الموضوع:
 ${topic}
 
 أنشئ حواراً طبيعياً بمستوى B1.
-
-الحوار 4 إلى 6 أسطر فقط.
-
-بعده سؤال فهم واحد و3 اختيارات.
-
+4 إلى 6 أسطر فقط.
+ثم سؤال فهم و3 اختيارات.
 `;
 
   }
@@ -985,15 +1203,10 @@ ${topic}
   ) {
 
     instruction = `
-
 النوع: WORD
 
 اختر كلمة B1 مرتبطة بالحياة اليومية.
-
-لا تختار كلمة سهلة جداً.
-
 كلمة واحدة فقط مع مثال واحد.
-
 `;
 
   }
@@ -1003,15 +1216,11 @@ ${topic}
   ) {
 
     instruction = `
-
 النوع: GRAMMAR
 
 اختر قاعدة B1 واحدة.
-
 اشرحها باختصار شديد.
-
 مثال واحد فقط.
-
 `;
 
   }
@@ -1021,20 +1230,17 @@ ${topic}
   ) {
 
     instruction = `
-
 النوع: VERBS
 
 اختر 5 أفعال B1 مختلفة ومفيدة.
 
 لكل فعل:
-
 Infinitiv
 Präteritum
 Perfekt
 المعنى بالعربية.
 
 لا تكتب أمثلة.
-
 `;
 
   }
@@ -1044,18 +1250,14 @@ Perfekt
   ) {
 
     instruction = `
-
 النوع: SITUATION
 
 الموضوع:
 ${topic}
 
-أنشئ موقفاً عملياً قصيراً بمستوى B1.
-
+أنشئ موقفاً عملياً قصيراً B1.
 4 إلى 6 أسطر.
-
-بعده سؤال فهم واحد و3 اختيارات.
-
+ثم سؤال فهم و3 اختيارات.
 `;
 
   }
@@ -1066,8 +1268,11 @@ ${topic}
     );
 
   return {
+
     type,
+
     response
+
   };
 
 }
@@ -1098,6 +1303,7 @@ async function sendPollContent(
   }
 
   const messageText =
+
     "🇩🇪💬 *" +
     parsed.title +
     "*\n\n" +
@@ -1126,16 +1332,81 @@ async function sendPollContent(
 
       ],
 
-      selectableCount: 1
+      selectableCount:
+        1
 
     }
 
   };
 
-  await sock.sendMessage(
-    jid,
-    pollMessage
-  );
+  const sent =
+    await sock.sendMessage(
+      jid,
+      pollMessage
+    );
+
+  // ==================================================
+  // SAVE POLL
+  // ==================================================
+
+  if (
+    sent?.key?.id
+  ) {
+
+    const pollId =
+      sent.key.id;
+
+    const secret =
+      sent.messageContextInfo
+        ?.messageSecret;
+
+    polls[pollId] = {
+
+      id:
+        pollId,
+
+      jid,
+
+      answer:
+        parsed.answer,
+
+      options:
+        parsed.options,
+
+      createdAt:
+        Date.now(),
+
+      creatorJid:
+        jidNormalizedUser(
+          sock.user?.lid ||
+          sock.user?.id ||
+          ""
+        ),
+
+      messageSecret:
+        secret
+          ? Buffer.from(
+              secret
+            ).toString(
+              "base64"
+            )
+          : null,
+
+      scoredVoters: {}
+
+    };
+
+    saveJSON(
+      POLLS_FILE,
+      polls
+    );
+
+    console.log(
+      "💾 Poll saved:",
+      pollId
+    );
+
+  }
 
   console.log(
     "✅ Poll sent."
@@ -1169,6 +1440,7 @@ async function sendWord(
   }
 
   const message =
+
     "🧠🇩🇪 *Wort des Tages*\n\n" +
 
     "🇩🇪 *" +
@@ -1225,6 +1497,7 @@ async function sendGrammar(
   }
 
   const message =
+
     "📚🇩🇪 *B1 Grammatik*\n\n" +
 
     "🔹 *" +
@@ -1291,9 +1564,6 @@ async function sendVerbs(
     }
   );
 
-  message +=
-    "\n📌 Infinitiv → Präteritum → Perfekt → المعنى";
-
   await sock.sendMessage(
     jid,
     {
@@ -1317,7 +1587,9 @@ async function sendContent(
 ) {
 
   if (
-    !ALLOWED_GROUPS.includes(jid)
+    !ALLOWED_GROUPS.includes(
+      jid
+    )
   ) {
 
     return;
@@ -1338,8 +1610,10 @@ async function sendContent(
       await generateContent();
 
     if (
-      data.type === "dialogue" ||
-      data.type === "situation"
+      data.type ===
+        "dialogue" ||
+      data.type ===
+        "situation"
     ) {
 
       await sendPollContent(
@@ -1470,58 +1744,544 @@ function getMessageText(msg) {
 }
 
 // ==================================================
-// START CONTENT INTERVAL
+// PROCESS POLL VOTE
 // ==================================================
 
-function startContentInterval() {
+async function processPollVote(
+  sock,
+  msg
+) {
 
-  if (
-    contentIntervalStarted
-  ) {
+  try {
 
-    return;
+    const pollUpdate =
+      msg.message
+        ?.pollUpdateMessage;
 
-  }
+    if (!pollUpdate)
+      return;
 
-  contentIntervalStarted = true;
+    const creationKey =
+      pollUpdate
+        .pollCreationMessageKey;
 
-  console.log(
-    "⏱️ Automatic content scheduler started."
-  );
+    if (
+      !creationKey?.id
+    ) {
 
-  setInterval(
-    async () => {
+      console.log(
+        "⚠️ Poll creation key missing."
+      );
 
-      if (!globalSock)
-        return;
+      return;
 
-      for (
-        const groupId
-        of ALLOWED_GROUPS
-      ) {
+    }
 
-        try {
+    const pollId =
+      creationKey.id;
 
-          await sendContent(
-            globalSock,
-            groupId
+    const poll =
+      polls[pollId];
+
+    if (!poll) {
+
+      console.log(
+        "⚠️ Poll not found:",
+        pollId
+      );
+
+      return;
+
+    }
+
+    // ==================================================
+    // ONLY OUR GROUPS
+    // ==================================================
+
+    const jid =
+      msg.key.remoteJid;
+
+    if (
+      !ALLOWED_GROUPS.includes(
+        jid
+      )
+    ) {
+
+      return;
+
+    }
+
+    // ==================================================
+    // VOTER JID
+    // ==================================================
+
+    const myJid =
+      jidNormalizedUser(
+        sock.user?.id ||
+        ""
+      );
+
+    const voterJid =
+      getKeyAuthor(
+        msg.key,
+        myJid
+      );
+
+    if (!voterJid) {
+
+      console.log(
+        "⚠️ Voter JID missing."
+      );
+
+      return;
+
+    }
+
+    // ==================================================
+    // ALREADY SCORED
+    // ==================================================
+
+    if (
+      poll.scoredVoters &&
+      poll.scoredVoters[
+        voterJid
+      ]
+    ) {
+
+      console.log(
+        "ℹ️ User already scored this poll:",
+        voterJid
+      );
+
+      return;
+
+    }
+
+    // ==================================================
+    // SECRET
+    // ==================================================
+
+    if (
+      !poll.messageSecret
+    ) {
+
+      console.log(
+        "❌ Poll messageSecret missing:",
+        pollId
+      );
+
+      return;
+
+    }
+
+    const pollEncKey =
+      Buffer.from(
+        poll.messageSecret,
+        "base64"
+      );
+
+    // ==================================================
+    // CREATOR JID
+    // ==================================================
+
+    const creatorCandidates = [];
+
+    if (
+      sock.user?.lid
+    ) {
+
+      creatorCandidates.push(
+        jidNormalizedUser(
+          sock.user.lid
+        )
+      );
+
+    }
+
+    if (
+      poll.creatorJid
+    ) {
+
+      creatorCandidates.push(
+        jidNormalizedUser(
+          poll.creatorJid
+        )
+      );
+
+    }
+
+    if (
+      sock.user?.id
+    ) {
+
+      creatorCandidates.push(
+        jidNormalizedUser(
+          sock.user.id
+        )
+      );
+
+    }
+
+    // إزالة التكرار
+    const uniqueCreators =
+      [
+        ...new Set(
+          creatorCandidates
+        )
+      ];
+
+    // ==================================================
+    // DECRYPT
+    // ==================================================
+
+    let vote = null;
+
+    for (
+      const creatorJid
+      of uniqueCreators
+    ) {
+
+      try {
+
+        vote =
+          decryptPollVote(
+
+            pollUpdate.vote,
+
+            {
+
+              pollCreatorJid:
+                creatorJid,
+
+              pollMsgId:
+                pollId,
+
+              pollEncKey,
+
+              voterJid
+
+            }
+
           );
 
-        }
-
-        catch (error) {
+        if (vote) {
 
           console.log(
-            "❌ Automatic content error:",
-            error.message
+            "🔓 Poll vote decrypted."
           );
+
+          break;
 
         }
 
       }
 
-    },
-    CONTENT_INTERVAL
+      catch (error) {
+
+        console.log(
+          "⚠️ Poll decrypt attempt failed:",
+          creatorJid
+        );
+
+      }
+
+    }
+
+    if (!vote) {
+
+      console.log(
+        "❌ Could not decrypt poll vote."
+      );
+
+      return;
+
+    }
+
+    // ==================================================
+    // SELECTED OPTION
+    // ==================================================
+
+    const selected =
+      vote.selectedOptions || [];
+
+    if (
+      !selected.length
+    ) {
+
+      console.log(
+        "⚠️ No selected option."
+      );
+
+      return;
+
+    }
+
+    const selectedHash =
+      Buffer.from(
+        selected[0]
+      ).toString(
+        "hex"
+      );
+
+    // ==================================================
+    // FIND ANSWER
+    // ==================================================
+
+    let selectedIndex = -1;
+
+    for (
+      let i = 0;
+      i < poll.options.length;
+      i++
+    ) {
+
+      const optionHash =
+        sha256(
+          poll.options[i]
+        );
+
+      if (
+        optionHash ===
+        selectedHash
+      ) {
+
+        selectedIndex =
+          i + 1;
+
+        break;
+
+      }
+
+    }
+
+    if (
+      selectedIndex === -1
+    ) {
+
+      console.log(
+        "⚠️ Could not identify selected option."
+      );
+
+      return;
+
+    }
+
+    // ==================================================
+    // NAME
+    // ==================================================
+
+    const name =
+      msg.pushName ||
+      voterJid;
+
+    // ==================================================
+    // CORRECT
+    // ==================================================
+
+    const correct =
+      selectedIndex ===
+      poll.answer;
+
+    ensureUser(
+      voterJid,
+      name
+    );
+
+    // مهم:
+    // نسجل المستخدم قبل إرسال الرسالة
+    // حتى لا يحصل على النقاط مرتين.
+
+    poll.scoredVoters =
+      poll.scoredVoters || {};
+
+    poll.scoredVoters[
+      voterJid
+    ] = {
+
+      answer:
+        selectedIndex,
+
+      correct,
+
+      time:
+        Date.now()
+
+    };
+
+    saveJSON(
+      POLLS_FILE,
+      polls
+    );
+
+    if (correct) {
+
+      addPoints(
+        voterJid,
+        name,
+        POINTS_PER_CORRECT
+      );
+
+      console.log(
+        `🏆 ${name} +${POINTS_PER_CORRECT} points`
+      );
+
+      await sock.sendMessage(
+        jid,
+        {
+
+          text:
+
+            `🎉 *إجابة صحيحة!*\n\n` +
+
+            `👤 ${name}\n` +
+
+            `⭐ +${POINTS_PER_CORRECT} نقطة\n` +
+
+            `🏆 مجموع نقاطك: ` +
+            `${points[voterJid].points}`
+
+        }
+      );
+
+    }
+
+    else {
+
+      addPoints(
+        voterJid,
+        name,
+        0
+      );
+
+      console.log(
+        `❌ ${name} answered incorrectly.`
+      );
+
+      await sock.sendMessage(
+        jid,
+        {
+
+          text:
+
+            `❌ *إجابة غير صحيحة*\n\n` +
+
+            `👤 ${name}\n` +
+
+            `⭐ نقاطك: ` +
+            `${points[voterJid].points}\n\n` +
+
+            `💡 حاول في السؤال القادم!`
+
+        }
+      );
+
+    }
+
+  }
+
+  catch (error) {
+
+    console.log(
+      "❌ Poll vote error:",
+      error.message
+    );
+
+  }
+
+}
+
+// ==================================================
+// POINTS COMMAND
+// ==================================================
+
+async function sendMyPoints(
+  sock,
+  jid,
+  senderJid,
+  name
+) {
+
+  ensureUser(
+    senderJid,
+    name
+  );
+
+  const user =
+    points[senderJid];
+
+  await sock.sendMessage(
+    jid,
+    {
+
+      text:
+
+        "🏆 *نقاطك في German B1 Bot*\n\n" +
+
+        `👤 ${user.name}\n` +
+
+        `⭐ النقاط: ${user.points}\n` +
+
+        `✅ إجابات صحيحة: ${user.correct}\n` +
+
+        `❌ إجابات خاطئة: ${user.wrong}`
+
+    }
+  );
+
+}
+
+// ==================================================
+// TOP COMMAND
+// ==================================================
+
+async function sendLeaderboard(
+  sock,
+  jid
+) {
+
+  const leaderboard =
+    getLeaderboard();
+
+  if (
+    !leaderboard.length
+  ) {
+
+    await sock.sendMessage(
+      jid,
+      {
+
+        text:
+          "🏆 لا توجد نقاط بعد.\nحل أول Poll!"
+
+      }
+    );
+
+    return;
+
+  }
+
+  let text =
+    "🏆 *German B1 TOP 10*\n\n";
+
+  leaderboard.forEach(
+    ([userJid, user], index) => {
+
+      text +=
+
+        `${index + 1}️⃣ ` +
+
+        `${user.name || userJid}` +
+
+        ` — ⭐ ${user.points}\n`;
+
+    }
+  );
+
+  await sock.sendMessage(
+    jid,
+    {
+      text
+    }
   );
 
 }
@@ -1553,7 +2313,8 @@ async function startBot() {
 
         logger:
           pino({
-            level: "silent"
+            level:
+              "silent"
           }),
 
         browser:
@@ -1583,7 +2344,7 @@ async function startBot() {
 
     sock.ev.on(
       "connection.update",
-      async (update) => {
+      async update => {
 
         const {
           connection,
@@ -1607,7 +2368,6 @@ async function startBot() {
         ) {
 
           console.log("");
-
           console.log(
             "======================================"
           );
@@ -1621,11 +2381,7 @@ async function startBot() {
           );
 
           console.log(
-            "💬 AI Chat: $question"
-          );
-
-          console.log(
-            "📚 Dialogues"
+            "💬 Dialogues"
           );
 
           console.log(
@@ -1645,7 +2401,11 @@ async function startBot() {
           );
 
           console.log(
-            "⏱️ Every 1 minute"
+            "🏆 Points System"
+          );
+
+          console.log(
+            "🤖 AI Chat with $"
           );
 
           console.log(
@@ -1654,7 +2414,53 @@ async function startBot() {
 
           console.log("");
 
-          startContentInterval();
+          // ==================================================
+          // START ONLY ONE INTERVAL
+          // ==================================================
+
+          if (
+            !contentInterval
+          ) {
+
+            contentInterval =
+              setInterval(
+                async () => {
+
+                  if (
+                    !globalSock
+                  )
+                    return;
+
+                  for (
+                    const groupId
+                    of ALLOWED_GROUPS
+                  ) {
+
+                    try {
+
+                      await sendContent(
+                        globalSock,
+                        groupId
+                      );
+
+                    }
+
+                    catch (error) {
+
+                      console.log(
+                        "❌ Automatic content error:",
+                        error.message
+                      );
+
+                    }
+
+                  }
+
+                },
+                CONTENT_INTERVAL
+              );
+
+          }
 
         }
 
@@ -1669,7 +2475,8 @@ async function startBot() {
 
             if (
               lastDisconnect
-                ?.error instanceof Boom
+                ?.error instanceof
+                Boom
             ) {
 
               code =
@@ -1694,6 +2501,8 @@ async function startBot() {
             "❌ WhatsApp disconnected. Code:",
             code
           );
+
+          globalSock = null;
 
           if (
             code ===
@@ -1786,8 +2595,6 @@ async function startBot() {
           "======================================"
         );
 
-        console.log("");
-
       }
 
       catch (error) {
@@ -1824,8 +2631,35 @@ async function startBot() {
             if (!msg.message)
               continue;
 
-            if (msg.key.fromMe)
+            // ==================================================
+            // POLL VOTE
+            // ==================================================
+
+            if (
+              msg.message
+                ?.pollUpdateMessage
+            ) {
+
+              await processPollVote(
+                sock,
+                msg
+              );
+
               continue;
+
+            }
+
+            // ==================================================
+            // IGNORE OWN NORMAL MESSAGES
+            // ==================================================
+
+            if (
+              msg.key.fromMe
+            ) {
+
+              continue;
+
+            }
 
             const jid =
               msg.key.remoteJid;
@@ -1833,7 +2667,6 @@ async function startBot() {
             if (!jid)
               continue;
 
-            // المجموعة فقط
             if (
               !jid.endsWith(
                 "@g.us"
@@ -1852,13 +2685,26 @@ async function startBot() {
             if (!text)
               continue;
 
+            const senderJid =
+              getKeyAuthor(
+                msg.key,
+                jidNormalizedUser(
+                  sock.user?.id ||
+                  ""
+                )
+              );
+
+            const senderName =
+              msg.pushName ||
+              senderJid;
+
             console.log(
               "📩 MESSAGE:",
               text
             );
 
             // ==================================================
-            // !test
+            // !TEST
             // ==================================================
 
             if (
@@ -1869,12 +2715,19 @@ async function startBot() {
               await sock.sendMessage(
                 jid,
                 {
+
                   text:
+
                     "🇩🇪🤖 German B1 AI Bot\n\n" +
+
                     "✅ البوت يعمل.\n" +
+
                     "🧠 Groq متصل.\n" +
+
                     "📚 نظام B1 يعمل.\n" +
-                    "💬 AI Chat يعمل باستخدام $"
+
+                    "🏆 نظام النقاط يعمل."
+
                 }
               );
 
@@ -1883,7 +2736,7 @@ async function startBot() {
             }
 
             // ==================================================
-            // !now
+            // !NOW
             // ==================================================
 
             if (
@@ -1909,7 +2762,45 @@ async function startBot() {
             }
 
             // ==================================================
-            // !help
+            // !POINTS
+            // ==================================================
+
+            if (
+              text.toLowerCase() ===
+              "!points"
+            ) {
+
+              await sendMyPoints(
+                sock,
+                jid,
+                senderJid,
+                senderName
+              );
+
+              continue;
+
+            }
+
+            // ==================================================
+            // !TOP
+            // ==================================================
+
+            if (
+              text.toLowerCase() ===
+              "!top"
+            ) {
+
+              await sendLeaderboard(
+                sock,
+                jid
+              );
+
+              continue;
+
+            }
+
+            // ==================================================
+            // !HELP
             // ==================================================
 
             if (
@@ -1920,28 +2811,43 @@ async function startBot() {
               await sock.sendMessage(
                 jid,
                 {
+
                   text:
+
                     "🇩🇪 *German B1 AI Bot*\n\n" +
 
                     "📚 المحتوى يصل تلقائياً.\n\n" +
 
                     "💬 حوارات B1\n" +
+
                     "🧠 كلمات وترجمة\n" +
+
                     "📚 قواعد قصيرة\n" +
+
                     "🔥 أفعال وتصريفاتها\n" +
+
                     "🛒 مواقف الحياة اليومية\n" +
+
                     "📝 Poll بثلاثة اختيارات\n\n" +
 
-                    "🤖 *AI Chat*\n" +
-                    "اكتب السؤال بهذا الشكل:\n\n" +
+                    "🏆 *نظام النقاط*\n" +
 
-                    "$hi\n" +
-                    "$ما معنى nachfragen؟\n" +
-                    "$صحح لي هذه الجملة\n" +
-                    "$اشرح لي Perfekt\n\n" +
+                    `✅ الإجابة الصحيحة = +${POINTS_PER_CORRECT} نقاط\n` +
+
+                    "⭐ !points — نقاطك\n" +
+
+                    "🏆 !top — المتصدرون\n\n" +
+
+                    "🤖 *AI Chat*\n" +
+
+                    "اكتب:\n" +
+
+                    "$ سؤالك\n\n" +
 
                     "⚡ !now\n" +
-                    "إرسال محتوى تجريبي الآن."
+
+                    "إرسال محتوى الآن."
+
                 }
               );
 
@@ -1954,43 +2860,48 @@ async function startBot() {
             // ==================================================
 
             if (
-              !text.startsWith("$")
+              text.startsWith("$")
             ) {
+
+              const aiQuestion =
+                text
+                  .slice(1)
+                  .trim();
+
+              if (
+                !aiQuestion
+              ) {
+
+                continue;
+
+              }
+
+              console.log(
+                "🤖 AI CHAT:",
+                aiQuestion
+              );
+
+              const answer =
+                await askChatAI(
+                  aiQuestion
+                );
+
+              await sock.sendMessage(
+                jid,
+                {
+
+                  text:
+
+                    "🇩🇪🤖 *German B1 Bot*\n\n" +
+
+                    answer
+
+                }
+              );
 
               continue;
 
             }
-
-            const aiQuestion =
-              text
-                .slice(1)
-                .trim();
-
-            if (!aiQuestion)
-              continue;
-
-            console.log(
-              "🤖 AI QUESTION:",
-              aiQuestion
-            );
-
-            const answer =
-              await askChatAI(
-                aiQuestion
-              );
-
-            await sock.sendMessage(
-              jid,
-              {
-                text:
-                  "🇩🇪🤖 *German B1 Bot*\n\n" +
-                  answer
-              }
-            );
-
-            console.log(
-              "✅ AI reply sent."
-            );
 
           }
 
@@ -2001,28 +2912,27 @@ async function startBot() {
               error.message
             );
 
-            // إرسال خطأ بسيط للمستخدم
             try {
 
-              await sock.sendMessage(
-                msg.key.remoteJid,
-                {
-                  text:
-                    "❌ حدث خطأ أثناء معالجة طلبك.\n" +
-                    "حاول مرة أخرى بعد قليل."
-                }
-              );
+              if (
+                msg.key?.remoteJid
+              ) {
+
+                await sock.sendMessage(
+                  msg.key.remoteJid,
+                  {
+
+                    text:
+                      "⚠️ حدث خطأ مؤقت. حاول مرة أخرى."
+
+                  }
+                );
+
+              }
 
             }
 
-            catch (sendError) {
-
-              console.log(
-                "❌ Could not send error message:",
-                sendError.message
-              );
-
-            }
+            catch {}
 
           }
 
