@@ -21,7 +21,7 @@ const { Boom } = require("@hapi/boom");
 const PORT = Number(process.env.PORT || 10000);
 
 const ALLOWED_GROUPS = [
-  "120363423888719176@g.us"
+  "120363410722950290@g.us"
 ];
 
 const CONTENT_INTERVAL = 60 * 1000;
