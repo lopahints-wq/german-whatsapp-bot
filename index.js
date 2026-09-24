@@ -19,7 +19,7 @@ const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.get("/", (req, res) => {
-  res.send("🇩🇪 German WhatsApp AI Bot is running!");
+  res.send("🇩🇪 German B1 AI Bot is running!");
 });
 
 app.listen(PORT, () => {
@@ -30,97 +30,96 @@ app.listen(PORT, () => {
 // SETTINGS
 // ==================================================
 
-// المجموعة الوحيدة التي تستقبل التمارين
+// المجموعة التي يرسل فيها البوت الدروس
 const ALLOWED_GROUPS = [
-  "120363410722950290@g.us"
+  "120363423888719176@g.us"
 ];
 
-// تمرين كل دقيقة
-const EXERCISE_INTERVAL = 60 * 1000;
+// للتجربة: رسالة تعليمية كل دقيقة
+const CONTENT_INTERVAL = 60 * 1000;
 
 // ==================================================
-// GLOBAL BOT
+// SOCKET
 // ==================================================
 
 let globalSock = null;
 
-// منع إنشاء أكثر من مؤقت
-let exerciseTimer = null;
-
-// منع تشغيل أكثر من اتصال في نفس الوقت
-let startingBot = false;
-
 // ==================================================
-// ALLOWED GROUP
+// CONTENT TYPES
 // ==================================================
 
-function isAllowedGroup(jid) {
-  return ALLOWED_GROUPS.includes(jid);
+const CONTENT_TYPES = [
+  "dialogue",
+  "word",
+  "grammar",
+  "verbs",
+  "situation"
+];
+
+let contentIndex = 0;
+
+// ==================================================
+// TOPICS
+// ==================================================
+
+const TOPICS = [
+  "في السوبرماركت",
+  "في المقهى",
+  "في المطعم",
+  "في العمل",
+  "مقابلة عمل",
+  "في محطة القطار",
+  "في الحافلة",
+  "في الفندق",
+  "في البنك",
+  "في البريد",
+  "شراء الملابس",
+  "عند الطبيب",
+  "حجز موعد",
+  "السؤال عن الطريق",
+  "استئجار شقة",
+  "التحدث مع الجيران",
+  "التسوق",
+  "المطار",
+  "السيارة وتصليحها",
+  "مكالمة هاتفية",
+  "التحدث مع صديق",
+  "الحياة اليومية",
+  "الدراسة",
+  "الجامعة",
+  "العمل في المكتب"
+];
+
+// ==================================================
+// RANDOM TOPIC
+// ==================================================
+
+function getRandomTopic() {
+
+  return TOPICS[
+    Math.floor(
+      Math.random() * TOPICS.length
+    )
+  ];
+
 }
 
 // ==================================================
-// GET MESSAGE TEXT
+// NEXT CONTENT TYPE
 // ==================================================
 
-function getMessageText(msg) {
+function getNextContentType() {
 
-  if (msg.message?.conversation) {
-    return msg.message.conversation;
-  }
+  const type =
+    CONTENT_TYPES[
+      contentIndex %
+      CONTENT_TYPES.length
+    ];
 
-  if (
-    msg.message?.extendedTextMessage?.text
-  ) {
-    return msg.message.extendedTextMessage.text;
-  }
+  contentIndex++;
 
-  if (
-    msg.message?.ephemeralMessage?.message?.conversation
-  ) {
-    return msg.message.ephemeralMessage.message.conversation;
-  }
+  return type;
 
-  if (
-    msg.message
-      ?.ephemeralMessage
-      ?.message
-      ?.extendedTextMessage
-      ?.text
-  ) {
-    return msg.message
-      .ephemeralMessage
-      .message
-      .extendedTextMessage
-      .text;
-  }
-
-  if (
-    msg.message
-      ?.viewOnceMessage
-      ?.message
-      ?.conversation
-  ) {
-    return msg.message
-      .viewOnceMessage
-      .message
-      .conversation;
-  }
-
-  if (
-    msg.message
-      ?.viewOnceMessage
-      ?.message
-      ?.extendedTextMessage
-      ?.text
-  ) {
-    return msg.message
-      .viewOnceMessage
-      .message
-      .extendedTextMessage
-      .text;
-  }
-
-  return "";
 }
 
 // ==================================================
@@ -129,66 +128,108 @@ function getMessageText(msg) {
 
 async function askAI(question) {
 
-  const apiKey = process.env.GROQ_API_KEY;
+  const apiKey =
+    process.env.GROQ_API_KEY;
 
   if (!apiKey) {
+
     throw new Error(
       "GROQ_API_KEY is missing."
     );
+
   }
 
-  console.log("🧠 Sending request to Groq...");
-  console.log("❓", question);
+  console.log(
+    "🧠 Sending request to Groq..."
+  );
 
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/responses",
-    {
-      method: "POST",
+  const response =
+    await fetch(
+      "https://api.groq.com/openai/v1/responses",
+      {
 
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
+        method: "POST",
 
-      body: JSON.stringify({
+        headers: {
+          "Content-Type":
+            "application/json",
 
-        model: "openai/gpt-oss-20b",
+          "Authorization":
+            `Bearer ${apiKey}`
+        },
 
-        instructions: `
-أنت مدرس لغة ألمانية داخل مجموعة WhatsApp.
+        body: JSON.stringify({
 
-مهمتك إنشاء تمارين ألمانية مناسبة من A1 إلى B1.
+          model:
+            "openai/gpt-oss-20b",
 
-عند إنشاء تمرين:
+          instructions: `
+أنت مدرس لغة ألمانية متخصص في مستوى B1 فقط.
 
-- أنشئ سؤالاً واحداً فقط.
-- استخدم اللغة الألمانية في السؤال.
-- استخدم 3 اختيارات فقط.
-- يجب أن تكون إجابة واحدة صحيحة.
-- لا تكتب شرحاً.
-- لا تكتب الإجابة الصحيحة خارج خانة ANSWER.
-- لا تستخدم 4 اختيارات.
-- غيّر نوع السؤال في كل مرة قدر الإمكان.
+مهمتك إنشاء محتوى تعليمي قصير جداً لمجموعة WhatsApp.
 
-يمكن أن تكون الأسئلة عن:
+القواعد المهمة:
 
-- المفردات
-- Artikel
-- تصريف الأفعال
-- Akkusativ
-- Dativ
-- Perfekt
-- ترتيب الجملة
-- حروف الجر
-- الصفات
-- قواعد A1
-- قواعد A2
-- قواعد B1
+1. استخدم مستوى B1 فقط.
+2. لا تستخدم شرحاً طويلاً.
+3. لا تكرر نفس الموضوع باستمرار.
+4. اجعل المحتوى عملياً من الحياة اليومية.
+5. استخدم الألمانية للمحتوى.
+6. استخدم العربية فقط للترجمة أو الشرح القصير.
+7. لا تضف مقدمات طويلة.
+8. لا تستخدم Markdown tables.
+9. لا تكتب أكثر مما هو مطلوب.
+10. إذا كان النوع يحتاج Poll، يجب أن يكون هناك 3 اختيارات فقط.
+11. يجب أن تكون إجابة Poll واحدة صحيحة فقط.
 
-أعد النتيجة بهذا الشكل فقط:
+أنواع المحتوى:
+
+DIALOGUE:
+حوار B1 قصير من 4 إلى 6 أسطر.
+بعده سؤال فهم واحد.
+3 اختيارات فقط.
+
+WORD:
+كلمة ألمانية واحدة B1.
+معناها بالعربية.
+مثال ألماني واحد.
+ترجم المثال.
+
+GRAMMAR:
+قاعدة B1 واحدة فقط.
+شرح عربي في سطرين كحد أقصى.
+مثال ألماني واحد.
+ترجم المثال.
+
+VERBS:
+أرسل 5 أفعال ألمانية مهمة.
+لكل فعل:
+Infinitiv
+Präteritum
+Perfekt
+المعنى بالعربية.
+بدون شرح طويل.
+
+SITUATION:
+موقف عملي قصير B1 من الحياة اليومية.
+4 إلى 6 أسطر.
+ثم سؤال واحد.
+3 اختيارات فقط.
+
+إذا كان النوع DIALOGUE أو SITUATION:
+يجب أن يكون الناتج بهذا الشكل بالضبط:
+
+TYPE:
+DIALOGUE
+
+TITLE:
+عنوان قصير
+
+CONTENT:
+المحتوى هنا
 
 QUESTION:
-السؤال
+السؤال هنا
 
 OPTION1:
 الاختيار الأول
@@ -202,23 +243,75 @@ OPTION3:
 ANSWER:
 1
 
-أو:
+أو ANSWER: 2
+أو ANSWER: 3
 
-ANSWER:
-2
+إذا كان WORD:
 
-أو:
+TYPE:
+WORD
 
-ANSWER:
-3
+WORD:
+الكلمة
+
+TRANSLATION:
+الترجمة
+
+EXAMPLE:
+الجملة
+
+EXAMPLE_TRANSLATION:
+الترجمة
+
+إذا كان GRAMMAR:
+
+TYPE:
+GRAMMAR
+
+TITLE:
+اسم القاعدة
+
+EXPLANATION:
+شرح قصير
+
+EXAMPLE:
+مثال
+
+TRANSLATION:
+الترجمة
+
+إذا كان VERBS:
+
+TYPE:
+VERBS
+
+VERB1:
+الفعل | Präteritum | Perfekt | المعنى
+
+VERB2:
+الفعل | Präteritum | Perfekt | المعنى
+
+VERB3:
+الفعل | Präteritum | Perfekt | المعنى
+
+VERB4:
+الفعل | Präteritum | Perfekt | المعنى
+
+VERB5:
+الفعل | Präteritum | Perfekt | المعنى
+
+ممنوع إضافة كلام خارج هذه الصيغة.
 `,
 
-        input: question
-      })
-    }
-  );
+          input: question
 
-  const data = await response.json();
+        })
+
+      }
+    );
+
+  const data =
+    await response.json();
 
   console.log(
     "📦 Groq status:",
@@ -228,31 +321,31 @@ ANSWER:
   if (!response.ok) {
 
     console.log(
-      "❌ GROQ ERROR:",
-      JSON.stringify(data, null, 2)
+      JSON.stringify(
+        data,
+        null,
+        2
+      )
     );
 
     throw new Error(
       data?.error?.message ||
       "Groq API request failed."
     );
+
   }
 
   let answer = "";
 
-  // ------------------------------------------
-  // output_text
-  // ------------------------------------------
-
   if (
-    typeof data.output_text === "string"
+    typeof data.output_text ===
+    "string"
   ) {
-    answer = data.output_text.trim();
-  }
 
-  // ------------------------------------------
-  // output[]
-  // ------------------------------------------
+    answer =
+      data.output_text.trim();
+
+  }
 
   if (
     !answer &&
@@ -273,226 +366,758 @@ ANSWER:
         ) {
 
           if (
-            content?.type === "output_text" &&
-            typeof content.text === "string"
+            content?.type ===
+              "output_text" &&
+            typeof content.text ===
+              "string"
           ) {
 
-            answer = content.text.trim();
+            answer =
+              content.text.trim();
 
             break;
+
           }
+
         }
+
       }
 
       if (answer) break;
+
     }
+
   }
 
   if (!answer) {
 
-    console.log(
-      "❌ Groq returned no text."
-    );
-
-    console.log(
-      JSON.stringify(data, null, 2)
-    );
-
     throw new Error(
-      "Groq returned an empty answer."
+      "Groq returned empty answer."
     );
+
   }
 
-  console.log("🤖 AI:", answer);
+  console.log(
+    "🤖 AI content generated."
+  );
 
   return answer;
+
 }
 
 // ==================================================
-// PARSE EXERCISE
+// PARSE CONTENT
 // ==================================================
 
-function parseExercise(text) {
+function getField(text, field, nextFields = []) {
 
-  if (!text) {
-    return null;
-  }
+  let endPattern =
+    nextFields.length
+      ? `(?=\\n(?:${nextFields.join("|")}):)`
+      : "$";
 
-  const questionMatch =
-    text.match(
-      /QUESTION:\s*([\s\S]*?)(?=\s*OPTION1:)/i
+  const regex =
+    new RegExp(
+      `${field}:\\s*([\\s\\S]*?)${endPattern}`,
+      "i"
     );
 
-  const option1Match =
-    text.match(
-      /OPTION1:\s*([\s\S]*?)(?=\s*OPTION2:)/i
+  const match =
+    text.match(regex);
+
+  return match
+    ? match[1].trim()
+    : "";
+
+}
+
+// ==================================================
+// PARSE POLL CONTENT
+// ==================================================
+
+function parsePollContent(text) {
+
+  const type =
+    getField(
+      text,
+      "TYPE",
+      ["TITLE", "CONTENT"]
     );
 
-  const option2Match =
-    text.match(
-      /OPTION2:\s*([\s\S]*?)(?=\s*OPTION3:)/i
+  const title =
+    getField(
+      text,
+      "TITLE",
+      ["CONTENT"]
     );
 
-  const option3Match =
-    text.match(
-      /OPTION3:\s*([\s\S]*?)(?=\s*ANSWER:)/i
+  const content =
+    getField(
+      text,
+      "CONTENT",
+      ["QUESTION"]
     );
 
-  const answerMatch =
-    text.match(
-      /ANSWER:\s*([123])/i
+  const question =
+    getField(
+      text,
+      "QUESTION",
+      ["OPTION1"]
+    );
+
+  const option1 =
+    getField(
+      text,
+      "OPTION1",
+      ["OPTION2"]
+    );
+
+  const option2 =
+    getField(
+      text,
+      "OPTION2",
+      ["OPTION3"]
+    );
+
+  const option3 =
+    getField(
+      text,
+      "OPTION3",
+      ["ANSWER"]
+    );
+
+  const answer =
+    getField(
+      text,
+      "ANSWER"
     );
 
   if (
-    !questionMatch ||
-    !option1Match ||
-    !option2Match ||
-    !option3Match ||
-    !answerMatch
+    !type ||
+    !content ||
+    !question ||
+    !option1 ||
+    !option2 ||
+    !option3 ||
+    !/^[123]$/.test(answer)
   ) {
 
     console.log(
-      "❌ Could not parse AI exercise:"
+      "❌ Poll parsing failed:"
     );
 
     console.log(text);
 
     return null;
-  }
 
-  const question =
-    questionMatch[1].trim();
-
-  const options = [
-    option1Match[1].trim(),
-    option2Match[1].trim(),
-    option3Match[1].trim()
-  ];
-
-  const answer =
-    Number(answerMatch[1]);
-
-  if (!question) {
-    return null;
-  }
-
-  if (
-    options.length !== 3
-  ) {
-    return null;
-  }
-
-  if (
-    options.some(
-      option => !option
-    )
-  ) {
-    return null;
-  }
-
-  if (
-    ![1, 2, 3].includes(answer)
-  ) {
-    return null;
   }
 
   return {
+
+    type,
+    title,
+    content,
     question,
-    options,
-    answer
+    options: [
+      option1,
+      option2,
+      option3
+    ],
+    answer:
+      Number(answer)
+
   };
+
 }
 
 // ==================================================
-// GENERATE AI EXERCISE
+// PARSE WORD
 // ==================================================
 
-async function generateExercise() {
+function parseWord(text) {
 
-  const prompt = `
-أنشئ الآن تمريناً جديداً باللغة الألمانية.
+  const word =
+    getField(
+      text,
+      "WORD",
+      ["TRANSLATION"]
+    );
 
-اختر عشوائياً مستوى A1 أو A2 أو B1.
+  const translation =
+    getField(
+      text,
+      "TRANSLATION",
+      ["EXAMPLE"]
+    );
 
-استخدم ثلاثة اختيارات فقط.
+  const example =
+    getField(
+      text,
+      "EXAMPLE",
+      ["EXAMPLE_TRANSLATION"]
+    );
 
-يجب أن تكون إجابة واحدة صحيحة فقط.
+  const exampleTranslation =
+    getField(
+      text,
+      "EXAMPLE_TRANSLATION"
+    );
 
-لا تكرر نفس نوع السؤال السابق إن أمكن.
+  if (
+    !word ||
+    !translation ||
+    !example ||
+    !exampleTranslation
+  ) {
 
-أخرج النتيجة بالتنسيق المطلوب.
+    return null;
+
+  }
+
+  return {
+
+    word,
+    translation,
+    example,
+    exampleTranslation
+
+  };
+
+}
+
+// ==================================================
+// PARSE GRAMMAR
+// ==================================================
+
+function parseGrammar(text) {
+
+  const title =
+    getField(
+      text,
+      "TITLE",
+      ["EXPLANATION"]
+    );
+
+  const explanation =
+    getField(
+      text,
+      "EXPLANATION",
+      ["EXAMPLE"]
+    );
+
+  const example =
+    getField(
+      text,
+      "EXAMPLE",
+      ["TRANSLATION"]
+    );
+
+  const translation =
+    getField(
+      text,
+      "TRANSLATION"
+    );
+
+  if (
+    !title ||
+    !explanation ||
+    !example ||
+    !translation
+  ) {
+
+    return null;
+
+  }
+
+  return {
+
+    title,
+    explanation,
+    example,
+    translation
+
+  };
+
+}
+
+// ==================================================
+// PARSE VERBS
+// ==================================================
+
+function parseVerbs(text) {
+
+  const verbs = [];
+
+  for (
+    let i = 1;
+    i <= 5;
+    i++
+  ) {
+
+    const value =
+      getField(
+        text,
+        `VERB${i}`,
+        [
+          `VERB${i + 1}`
+        ]
+      );
+
+    if (value) {
+
+      verbs.push(value);
+
+    }
+
+  }
+
+  if (
+    verbs.length !== 5
+  ) {
+
+    return null;
+
+  }
+
+  return verbs;
+
+}
+
+// ==================================================
+// CREATE CONTENT
+// ==================================================
+
+async function generateContent() {
+
+  const type =
+    getNextContentType();
+
+  const topic =
+    getRandomTopic();
+
+  console.log(
+    `🎯 Content type: ${type}`
+  );
+
+  console.log(
+    `📚 Topic: ${topic}`
+  );
+
+  let instruction = "";
+
+  if (
+    type === "dialogue"
+  ) {
+
+    instruction = `
+النوع: DIALOGUE
+
+الموضوع:
+${topic}
+
+أنشئ حواراً طبيعياً بمستوى B1.
+الحوار 4 إلى 6 أسطر فقط.
+بعده سؤال فهم واحد و3 اختيارات.
 `;
 
-  const aiResponse =
-    await askAI(prompt);
+  }
 
-  return parseExercise(
-    aiResponse
-  );
+  else if (
+    type === "word"
+  ) {
+
+    instruction = `
+النوع: WORD
+
+اختر كلمة B1 مرتبطة بالحياة اليومية.
+لا تختار كلمة سهلة جداً.
+كلمة واحدة فقط مع مثال واحد.
+`;
+
+  }
+
+  else if (
+    type === "grammar"
+  ) {
+
+    instruction = `
+النوع: GRAMMAR
+
+اختر قاعدة B1 واحدة.
+اشرحها باختصار شديد.
+مثال واحد فقط.
+`;
+
+  }
+
+  else if (
+    type === "verbs"
+  ) {
+
+    instruction = `
+النوع: VERBS
+
+اختر 5 أفعال B1 مختلفة ومفيدة.
+
+لكل فعل:
+Infinitiv
+Präteritum
+Perfekt
+المعنى بالعربية.
+
+لا تكتب أمثلة.
+`;
+
+  }
+
+  else if (
+    type === "situation"
+  ) {
+
+    instruction = `
+النوع: SITUATION
+
+الموضوع:
+${topic}
+
+أنشئ موقفاً عملياً قصيراً بمستوى B1.
+4 إلى 6 أسطر.
+بعده سؤال فهم واحد و3 اختيارات.
+`;
+
+  }
+
+  const response =
+    await askAI(
+      instruction
+    );
+
+  return {
+    type,
+    response
+  };
+
 }
 
 // ==================================================
-// SEND WHATSAPP POLL
+// SEND POLL
 // ==================================================
 
-async function sendExercisePoll(
+async function sendPollContent(
+  sock,
+  jid,
+  data
+) {
+
+  const parsed =
+    parsePollContent(
+      data.response
+    );
+
+  if (!parsed) {
+
+    console.log(
+      "❌ Invalid poll content."
+    );
+
+    return;
+
+  }
+
+  let messageText =
+    "🇩🇪💬 *" +
+    parsed.title +
+    "*\n\n" +
+    parsed.content +
+    "\n\n" +
+    "❓ *" +
+    parsed.question +
+    "*";
+
+  const pollMessage = {
+
+    poll: {
+
+      name:
+        messageText,
+
+      values: [
+
+        `1️⃣ ${parsed.options[0]}`,
+
+        `2️⃣ ${parsed.options[1]}`,
+
+        `3️⃣ ${parsed.options[2]}`
+
+      ],
+
+      selectableCount: 1
+
+    }
+
+  };
+
+  await sock.sendMessage(
+    jid,
+    pollMessage
+  );
+
+  console.log(
+    "✅ Poll sent."
+  );
+
+}
+
+// ==================================================
+// SEND WORD
+// ==================================================
+
+async function sendWord(
+  sock,
+  jid,
+  data
+) {
+
+  const parsed =
+    parseWord(
+      data.response
+    );
+
+  if (!parsed) {
+
+    console.log(
+      "❌ Invalid word content."
+    );
+
+    return;
+
+  }
+
+  const message =
+    "🧠🇩🇪 *Wort des Tages*\n\n" +
+
+    "🇩🇪 *" +
+    parsed.word +
+    "*\n" +
+
+    "🇸🇦 " +
+    parsed.translation +
+    "\n\n" +
+
+    "📝 " +
+    parsed.example +
+    "\n" +
+
+    "🇸🇦 " +
+    parsed.exampleTranslation;
+
+  await sock.sendMessage(
+    jid,
+    {
+      text: message
+    }
+  );
+
+  console.log(
+    "✅ Word sent."
+  );
+
+}
+
+// ==================================================
+// SEND GRAMMAR
+// ==================================================
+
+async function sendGrammar(
+  sock,
+  jid,
+  data
+) {
+
+  const parsed =
+    parseGrammar(
+      data.response
+    );
+
+  if (!parsed) {
+
+    console.log(
+      "❌ Invalid grammar content."
+    );
+
+    return;
+
+  }
+
+  const message =
+    "📚🇩🇪 *B1 Grammatik*\n\n" +
+
+    "🔹 *" +
+    parsed.title +
+    "*\n\n" +
+
+    parsed.explanation +
+    "\n\n" +
+
+    "📝 " +
+    parsed.example +
+    "\n" +
+
+    "🇸🇦 " +
+    parsed.translation;
+
+  await sock.sendMessage(
+    jid,
+    {
+      text: message
+    }
+  );
+
+  console.log(
+    "✅ Grammar sent."
+  );
+
+}
+
+// ==================================================
+// SEND VERBS
+// ==================================================
+
+async function sendVerbs(
+  sock,
+  jid,
+  data
+) {
+
+  const verbs =
+    parseVerbs(
+      data.response
+    );
+
+  if (!verbs) {
+
+    console.log(
+      "❌ Invalid verbs content."
+    );
+
+    return;
+
+  }
+
+  let message =
+    "🔥🇩🇪 *5 wichtige B1 Verben*\n\n";
+
+  verbs.forEach(
+    (verb, index) => {
+
+      message +=
+        `${index + 1}️⃣ ${verb}\n`;
+
+    }
+  );
+
+  message +=
+    "\n📌 Infinitiv → Präteritum → Perfekt → المعنى";
+
+  await sock.sendMessage(
+    jid,
+    {
+      text: message
+    }
+  );
+
+  console.log(
+    "✅ Verbs sent."
+  );
+
+}
+
+// ==================================================
+// SEND CONTENT
+// ==================================================
+
+async function sendContent(
   sock,
   jid
 ) {
 
-  if (!isAllowedGroup(jid)) {
+  if (
+    !ALLOWED_GROUPS.includes(jid)
+  ) {
+
     return;
+
   }
 
   try {
 
     console.log(
-      `🧠 Creating exercise for ${jid}...`
-    );
-
-    const exercise =
-      await generateExercise();
-
-    if (!exercise) {
-
-      console.log(
-        "❌ Could not create exercise."
-      );
-
-      return;
-    }
-
-    const poll = {
-
-      poll: {
-
-        name:
-          "🇩🇪📝 German Exercise\n\n" +
-          exercise.question,
-
-        values: [
-
-          `1️⃣ ${exercise.options[0]}`,
-
-          `2️⃣ ${exercise.options[1]}`,
-
-          `3️⃣ ${exercise.options[2]}`
-
-        ],
-
-        selectableCount: 1
-
-      }
-
-    };
-
-    await sock.sendMessage(
-      jid,
-      poll
+      "======================================"
     );
 
     console.log(
-      "✅ Poll sent successfully."
+      "📚 Creating new B1 content..."
+    );
+
+    const data =
+      await generateContent();
+
+    if (
+      data.type ===
+        "dialogue" ||
+      data.type ===
+        "situation"
+    ) {
+
+      await sendPollContent(
+        sock,
+        jid,
+        data
+      );
+
+    }
+
+    else if (
+      data.type ===
+      "word"
+    ) {
+
+      await sendWord(
+        sock,
+        jid,
+        data
+      );
+
+    }
+
+    else if (
+      data.type ===
+      "grammar"
+    ) {
+
+      await sendGrammar(
+        sock,
+        jid,
+        data
+      );
+
+    }
+
+    else if (
+      data.type ===
+      "verbs"
+    ) {
+
+      await sendVerbs(
+        sock,
+        jid,
+        data
+      );
+
+    }
+
+    console.log(
+      "======================================"
     );
 
   }
@@ -500,89 +1125,78 @@ async function sendExercisePoll(
   catch (error) {
 
     console.log(
-      "❌ Exercise error:",
+      "❌ Content error:",
       error.message
     );
+
   }
+
 }
 
 // ==================================================
-// START EXERCISE TIMER
+// GET MESSAGE TEXT
 // ==================================================
 
-function startExerciseTimer() {
+function getMessageText(msg) {
 
-  // إذا كان مؤقت موجود بالفعل لا تنشئ واحدًا آخر
-  if (exerciseTimer) {
-    return;
+  if (
+    msg.message?.conversation
+  ) {
+
+    return msg.message.conversation;
+
   }
 
-  console.log(
-    "⏱️ Starting exercise timer..."
-  );
+  if (
+    msg.message
+      ?.extendedTextMessage
+      ?.text
+  ) {
 
-  exerciseTimer =
-    setInterval(
-      async () => {
-
-        // لا ترسل إذا WhatsApp غير متصل
-        if (!globalSock) {
-
-          console.log(
-            "⏭️ WhatsApp not connected. Skipping exercise."
-          );
-
-          return;
-        }
-
-        for (
-          const groupId
-          of ALLOWED_GROUPS
-        ) {
-
-          try {
-
-            await sendExercisePoll(
-              globalSock,
-              groupId
-            );
-
-          }
-
-          catch (error) {
-
-            console.log(
-              "❌ Automatic exercise error:",
-              error.message
-            );
-
-          }
-        }
-
-      },
-      EXERCISE_INTERVAL
+    return (
+      msg.message
+        .extendedTextMessage
+        .text
     );
-}
 
-// ==================================================
-// STOP EXERCISE TIMER
-// ==================================================
-
-function stopExerciseTimer() {
-
-  if (!exerciseTimer) {
-    return;
   }
 
-  clearInterval(
-    exerciseTimer
-  );
+  if (
+    msg.message
+      ?.ephemeralMessage
+      ?.message
+      ?.conversation
+  ) {
 
-  exerciseTimer = null;
+    return (
+      msg.message
+        .ephemeralMessage
+        .message
+        .conversation
+    );
 
-  console.log(
-    "⏹️ Exercise timer stopped."
-  );
+  }
+
+  if (
+    msg.message
+      ?.ephemeralMessage
+      ?.message
+      ?.extendedTextMessage
+      ?.text
+  ) {
+
+    return (
+      msg.message
+        .ephemeralMessage
+        .message
+        .extendedTextMessage
+        .text
+    );
+
+  }
+
+  return "";
+
 }
 
 // ==================================================
@@ -591,27 +1205,11 @@ function stopExerciseTimer() {
 
 async function startBot() {
 
-  // منع startBot من العمل مرتين في نفس اللحظة
-  if (startingBot) {
-
-    console.log(
-      "⏳ Bot is already starting..."
-    );
-
-    return;
-  }
-
-  startingBot = true;
-
   try {
 
     console.log(
-      "🚀 Starting German WhatsApp AI Bot..."
+      "🚀 Starting German B1 AI Bot..."
     );
-
-    // ==================================================
-    // AUTH
-    // ==================================================
 
     const {
       state,
@@ -620,10 +1218,6 @@ async function startBot() {
       await useMultiFileAuthState(
         "./auth_info"
       );
-
-    // ==================================================
-    // SOCKET
-    // ==================================================
 
     const sock =
       makeWASocket({
@@ -648,14 +1242,8 @@ async function startBot() {
 
       });
 
-    globalSock = sock;
-
-    // السماح بإعادة start بعد إنشاء socket
-    startingBot = false;
-
-    // ==================================================
-    // SAVE CREDENTIALS
-    // ==================================================
+    globalSock =
+      sock;
 
     sock.ev.on(
       "creds.update",
@@ -663,7 +1251,7 @@ async function startBot() {
     );
 
     // ==================================================
-    // CONNECTION UPDATE
+    // CONNECTION
     // ==================================================
 
     sock.ev.on(
@@ -675,25 +1263,20 @@ async function startBot() {
           lastDisconnect
         } = update;
 
-        // ------------------------------------------
-        // CONNECTING
-        // ------------------------------------------
-
         if (
-          connection === "connecting"
+          connection ===
+          "connecting"
         ) {
 
           console.log(
-            "🔄 Connecting to WhatsApp..."
+            "🔄 Connecting..."
           );
+
         }
 
-        // ------------------------------------------
-        // OPEN
-        // ------------------------------------------
-
         if (
-          connection === "open"
+          connection ===
+          "open"
         ) {
 
           console.log("");
@@ -706,19 +1289,31 @@ async function startBot() {
           );
 
           console.log(
-            "🤖 GERMAN AI BOT READY!"
+            "🇩🇪 B1 AI EDUCATION BOT READY!"
           );
 
           console.log(
-            "📝 AI POLL READY!"
+            "💬 Dialogues"
           );
 
           console.log(
-            "⏱️ Exercise every 1 minute"
+            "🧠 Vocabulary"
           );
 
           console.log(
-            "💲 AI only responds to $"
+            "📚 Grammar"
+          );
+
+          console.log(
+            "🔥 Verbs"
+          );
+
+          console.log(
+            "📝 Polls"
+          );
+
+          console.log(
+            "⏱️ Every 1 minute"
           );
 
           console.log(
@@ -727,56 +1322,28 @@ async function startBot() {
 
           console.log("");
 
-          // تشغيل مؤقت واحد فقط
-          startExerciseTimer();
         }
 
-        // ------------------------------------------
-        // CLOSE
-        // ------------------------------------------
-
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
-
-          // أوقف المؤقت
-          stopExerciseTimer();
-
-          // إزالة socket القديم
-          if (
-            globalSock === sock
-          ) {
-
-            globalSock = null;
-          }
 
           let code = 0;
 
           try {
 
             if (
-              lastDisconnect?.error
+              lastDisconnect
+                ?.error instanceof Boom
             ) {
 
-              const error =
-                lastDisconnect.error;
+              code =
+                lastDisconnect
+                  .error
+                  .output
+                  .statusCode;
 
-              if (
-                error instanceof Boom
-              ) {
-
-                code =
-                  error.output.statusCode;
-
-              }
-
-              else if (
-                error?.output?.statusCode
-              ) {
-
-                code =
-                  error.output.statusCode;
-              }
             }
 
           }
@@ -786,16 +1353,13 @@ async function startBot() {
             console.log(
               "⚠️ Could not read disconnect code."
             );
+
           }
 
           console.log(
             "❌ WhatsApp disconnected. Code:",
             code
           );
-
-          // ------------------------------------------
-          // LOGGED OUT
-          // ------------------------------------------
 
           if (
             code ===
@@ -807,43 +1371,29 @@ async function startBot() {
             );
 
             console.log(
-              "⚠️ You must pair WhatsApp again."
+              "⚠️ Pair WhatsApp again."
             );
 
             return;
-          }
 
-          // ------------------------------------------
-          // RECONNECT
-          // ------------------------------------------
+          }
 
           console.log(
             "🔄 Reconnecting in 5 seconds..."
           );
 
           setTimeout(
-            () => {
-
-              startBot()
-                .catch(
-                  error => {
-
-                    console.log(
-                      "❌ Reconnect error:",
-                      error.message
-                    );
-                  }
-                );
-
-            },
+            startBot,
             5000
           );
+
         }
+
       }
     );
 
     // ==================================================
-    // PAIRING CODE
+    // PAIRING
     // ==================================================
 
     if (
@@ -860,6 +1410,7 @@ async function startBot() {
         );
 
         return;
+
       }
 
       const cleanNumber =
@@ -867,10 +1418,6 @@ async function startBot() {
           /\D/g,
           ""
         );
-
-      console.log(
-        "📱 Preparing WhatsApp pairing..."
-      );
 
       await new Promise(
         resolve =>
@@ -914,7 +1461,9 @@ async function startBot() {
           "❌ Pairing error:",
           error.message
         );
+
       }
+
     }
 
     // ==================================================
@@ -934,31 +1483,29 @@ async function startBot() {
 
           try {
 
-            if (!msg) {
+            if (!msg)
               continue;
-            }
 
-            if (!msg.message) {
+            if (!msg.message)
               continue;
-            }
 
-            // لا تعالج رسائل البوت نفسه
-            if (msg.key.fromMe) {
+            if (msg.key.fromMe)
               continue;
-            }
 
             const jid =
               msg.key.remoteJid;
 
-            if (!jid) {
+            if (!jid)
               continue;
-            }
 
-            // المجموعات فقط
             if (
-              !jid.endsWith("@g.us")
+              !jid.endsWith(
+                "@g.us"
+              )
             ) {
+
               continue;
+
             }
 
             const text =
@@ -966,18 +1513,16 @@ async function startBot() {
                 msg
               ).trim();
 
-            if (!text) {
+            if (!text)
               continue;
-            }
 
-            console.log("");
             console.log(
-              "📩 GROUP MESSAGE:",
+              "📩 MESSAGE:",
               text
             );
 
             // ==================================================
-            // !TEST
+            // !test
             // ==================================================
 
             if (
@@ -989,18 +1534,45 @@ async function startBot() {
                 jid,
                 {
                   text:
-                    "🇩🇪🤖 German WhatsApp AI Bot\n\n" +
-                    "✅ البوت يعمل بشكل صحيح.\n" +
-                    "🧠 Groq AI متصل.\n" +
-                    "📝 نظام الاستفتاءات يعمل."
+                    "🇩🇪🤖 German B1 AI Bot\n\n" +
+                    "✅ البوت يعمل.\n" +
+                    "🧠 Groq متصل.\n" +
+                    "📚 نظام B1 يعمل."
                 }
               );
 
               continue;
+
             }
 
             // ==================================================
-            // !HELP
+            // !now
+            // ==================================================
+
+            if (
+              text.toLowerCase() ===
+              "!now"
+            ) {
+
+              if (
+                ALLOWED_GROUPS.includes(
+                  jid
+                )
+              ) {
+
+                await sendContent(
+                  sock,
+                  jid
+                );
+
+              }
+
+              continue;
+
+            }
+
+            // ==================================================
+            // !help
             // ==================================================
 
             if (
@@ -1012,53 +1584,36 @@ async function startBot() {
                 jid,
                 {
                   text:
-                    "🇩🇪🤖 *German WhatsApp AI Bot*\n\n" +
+                    "🇩🇪 *German B1 AI Bot*\n\n" +
 
-                    "📝 يتم إرسال تمرين ألماني تلقائياً كل دقيقة.\n\n" +
+                    "📚 المحتوى يصل تلقائياً.\n\n" +
 
-                    "📊 التمرين عبارة عن WhatsApp Poll بثلاثة اختيارات.\n\n" +
+                    "💬 حوارات B1\n" +
+                    "🧠 كلمات وترجمة\n" +
+                    "📚 قواعد قصيرة\n" +
+                    "🔥 أفعال وتصريفاتها\n" +
+                    "🛒 مواقف الحياة اليومية\n" +
+                    "📝 Poll بثلاثة اختيارات\n\n" +
 
-                    "💲 الذكاء الاصطناعي:\n" +
-                    "اكتب رسالتك بهذا الشكل:\n\n" +
-
-                    "$Was bedeutet gehen?\n\n" +
-
-                    "💡 الرسائل العادية لا يرد عليها البوت."
+                    "⚡ !now\n" +
+                    "إرسال محتوى تجريبي الآن."
                 }
               );
 
               continue;
+
             }
 
             // ==================================================
-            // ONLY ALLOWED GROUP FOR AI/COMMANDS?
-            // ==================================================
-
-            // الأوامر وAI يمكن أن تعمل فقط في المجموعة المسموحة
-            if (
-              !isAllowedGroup(jid)
-            ) {
-
-              console.log(
-                "⏭️ Group is not allowed."
-              );
-
-              continue;
-            }
-
-            // ==================================================
-            // AI ONLY WITH $
+            // AI
             // ==================================================
 
             if (
               !text.startsWith("$")
             ) {
 
-              console.log(
-                "⏭️ Ignored - no $ prefix."
-              );
-
               continue;
+
             }
 
             const aiQuestion =
@@ -1066,17 +1621,18 @@ async function startBot() {
                 .slice(1)
                 .trim();
 
-            if (!aiQuestion) {
+            if (!aiQuestion)
               continue;
-            }
-
-            console.log(
-              "🤖 Sending question to AI..."
-            );
 
             const answer =
               await askAI(
-                aiQuestion
+                `
+السؤال من أحد أعضاء مجموعة ألمانية:
+
+${aiQuestion}
+
+أجب كمدرس ألمانية B1.
+`
               );
 
             await sock.sendMessage(
@@ -1088,10 +1644,6 @@ async function startBot() {
               }
             );
 
-            console.log(
-              "✅ AI reply sent."
-            );
-
           }
 
           catch (error) {
@@ -1100,20 +1652,56 @@ async function startBot() {
               "❌ Message error:",
               error.message
             );
+
           }
+
         }
+
       }
+    );
+
+    // ==================================================
+    // AUTOMATIC CONTENT
+    // ==================================================
+
+    setInterval(
+      async () => {
+
+        if (!globalSock)
+          return;
+
+        for (
+          const groupId
+          of ALLOWED_GROUPS
+        ) {
+
+          try {
+
+            await sendContent(
+              globalSock,
+              groupId
+            );
+
+          }
+
+          catch (error) {
+
+            console.log(
+              "❌ Automatic content error:",
+              error.message
+            );
+
+          }
+
+        }
+
+      },
+      CONTENT_INTERVAL
     );
 
   }
 
   catch (error) {
-
-    startingBot = false;
-
-    globalSock = null;
-
-    stopExerciseTimer();
 
     console.log(
       "❌ BOT START ERROR:",
@@ -1125,23 +1713,12 @@ async function startBot() {
     );
 
     setTimeout(
-      () => {
-
-        startBot()
-          .catch(
-            err => {
-
-              console.log(
-                "❌ Restart failed:",
-                err.message
-              );
-            }
-          );
-
-      },
+      startBot,
       10000
     );
+
   }
+
 }
 
 // ==================================================
