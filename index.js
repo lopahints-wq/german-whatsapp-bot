@@ -30,12 +30,11 @@ app.listen(PORT, () => {
 // SETTINGS
 // ==================================================
 
-// المجموعة التي يرسل فيها البوت الدروس
 const ALLOWED_GROUPS = [
   "120363410722950290@g.us"
 ];
 
-// للتجربة: رسالة تعليمية كل دقيقة
+// محتوى تلقائي كل دقيقة
 const CONTENT_INTERVAL = 60 * 1000;
 
 // ==================================================
@@ -43,6 +42,9 @@ const CONTENT_INTERVAL = 60 * 1000;
 // ==================================================
 
 let globalSock = null;
+
+// لمنع تشغيل أكثر من مؤقت عند إعادة الاتصال
+let contentIntervalStarted = false;
 
 // ==================================================
 // CONTENT TYPES
@@ -123,7 +125,7 @@ function getNextContentType() {
 }
 
 // ==================================================
-// GROQ AI
+// GROQ AI - CONTENT
 // ==================================================
 
 async function askAI(question) {
@@ -140,7 +142,7 @@ async function askAI(question) {
   }
 
   console.log(
-    "🧠 Sending request to Groq..."
+    "🧠 Sending content request to Groq..."
   );
 
   const response =
@@ -151,11 +153,13 @@ async function askAI(question) {
         method: "POST",
 
         headers: {
+
           "Content-Type":
             "application/json",
 
           "Authorization":
             `Bearer ${apiKey}`
+
         },
 
         body: JSON.stringify({
@@ -164,6 +168,7 @@ async function askAI(question) {
             "openai/gpt-oss-20b",
 
           instructions: `
+
 أنت مدرس لغة ألمانية متخصص في مستوى B1 فقط.
 
 مهمتك إنشاء محتوى تعليمي قصير جداً لمجموعة WhatsApp.
@@ -185,38 +190,46 @@ async function askAI(question) {
 أنواع المحتوى:
 
 DIALOGUE:
+
 حوار B1 قصير من 4 إلى 6 أسطر.
 بعده سؤال فهم واحد.
 3 اختيارات فقط.
 
 WORD:
+
 كلمة ألمانية واحدة B1.
 معناها بالعربية.
 مثال ألماني واحد.
 ترجم المثال.
 
 GRAMMAR:
+
 قاعدة B1 واحدة فقط.
 شرح عربي في سطرين كحد أقصى.
 مثال ألماني واحد.
 ترجم المثال.
 
 VERBS:
+
 أرسل 5 أفعال ألمانية مهمة.
 لكل فعل:
+
 Infinitiv
 Präteritum
 Perfekt
 المعنى بالعربية.
+
 بدون شرح طويل.
 
 SITUATION:
+
 موقف عملي قصير B1 من الحياة اليومية.
 4 إلى 6 أسطر.
 ثم سؤال واحد.
 3 اختيارات فقط.
 
 إذا كان النوع DIALOGUE أو SITUATION:
+
 يجب أن يكون الناتج بهذا الشكل بالضبط:
 
 TYPE:
@@ -243,8 +256,13 @@ OPTION3:
 ANSWER:
 1
 
-أو ANSWER: 2
-أو ANSWER: 3
+أو:
+
+ANSWER: 2
+
+أو:
+
+ANSWER: 3
 
 إذا كان WORD:
 
@@ -301,6 +319,7 @@ VERB5:
 الفعل | Präteritum | Perfekt | المعنى
 
 ممنوع إضافة كلام خارج هذه الصيغة.
+
 `,
 
           input: question
@@ -314,7 +333,7 @@ VERB5:
     await response.json();
 
   console.log(
-    "📦 Groq status:",
+    "📦 Groq content status:",
     response.status
   );
 
@@ -383,7 +402,8 @@ VERB5:
 
       }
 
-      if (answer) break;
+      if (answer)
+        break;
 
     }
 
@@ -406,12 +426,241 @@ VERB5:
 }
 
 // ==================================================
-// PARSE CONTENT
+// GROQ AI - CHAT
 // ==================================================
 
-function getField(text, field, nextFields = []) {
+async function askChatAI(question) {
 
-  let endPattern =
+  const apiKey =
+    process.env.GROQ_API_KEY;
+
+  if (!apiKey) {
+
+    throw new Error(
+      "GROQ_API_KEY is missing."
+    );
+
+  }
+
+  console.log(
+    "🧠 Sending chat request to Groq..."
+  );
+
+  const response =
+    await fetch(
+      "https://api.groq.com/openai/v1/responses",
+      {
+
+        method: "POST",
+
+        headers: {
+
+          "Content-Type":
+            "application/json",
+
+          "Authorization":
+            `Bearer ${apiKey}`
+
+        },
+
+        body: JSON.stringify({
+
+          model:
+            "openai/gpt-oss-20b",
+
+          instructions: `
+
+أنت مساعد ومدرس لغة ألمانية بمستوى B1 داخل مجموعة WhatsApp.
+
+هذه محادثة عادية مع عضو في المجموعة.
+
+مهم جداً:
+
+1. أجب مباشرة على سؤال المستخدم.
+2. لا تنشئ درساً تلقائياً إلا إذا طلب المستخدم ذلك.
+3. لا تنشئ Poll إلا إذا طلب المستخدم Poll صراحة.
+4. لا تستخدم TYPE.
+5. لا تستخدم TITLE.
+6. لا تستخدم OPTION1.
+7. لا تستخدم OPTION2.
+8. لا تستخدم OPTION3.
+9. لا تستخدم ANSWER.
+10. لا تحول كل سؤال إلى تمرين.
+11. إذا كتب المستخدم Hi أو Hallo أو هاي، رد عليه بشكل طبيعي.
+12. إذا سأل عن كلمة ألمانية، اشرح معناها بالعربية وأعط مثالاً ألمانياً قصيراً.
+13. إذا سأل عن قاعدة ألمانية، اشرحها ببساطة وبمستوى B1.
+14. إذا كتب جملة ألمانية فيها خطأ، صححها واشرح الخطأ باختصار.
+15. إذا كتب بالعربية، افهم السؤال وأجب بالعربية، ويمكنك إضافة الألمانية عند الحاجة.
+16. إذا كتب بالألمانية، يمكنك الرد بالألمانية مع شرح عربي قصير عند الحاجة.
+17. لا تستخدم مستوى أعلى من B1 إلا إذا كان ضرورياً للشرح.
+18. كن مختصراً ومفيداً.
+19. لا تكتب مقدمة طويلة.
+20. لا تستخدم Markdown tables.
+21. لا تقل إنك لا تستطيع الإجابة إذا كان السؤال متعلقاً بتعلم الألمانية.
+22. لا تخرج عن موضوع تعلم الألمانية إلا إذا كان السؤال تحية أو سؤالاً بسيطاً.
+
+أمثلة:
+
+المستخدم:
+Hi
+
+الرد:
+Hallo! 👋 Wie geht es dir?
+
+المستخدم:
+هاي
+
+الرد:
+Hallo! 👋 Wie geht es dir?
+
+المستخدم:
+ما معنى nachfragen؟
+
+الرد:
+🇩🇪 nachfragen = يستفسر / يسأل عن شيء
+
+Beispiel:
+Ich muss beim Hotel nachfragen.
+
+🇸🇦 يجب أن أستفسر من الفندق.
+
+المستخدم:
+صحح لي:
+Ich habe gestern nach Berlin gefahren.
+
+الرد:
+الصحيح:
+
+Ich bin gestern nach Berlin gefahren.
+
+لأن الفعل "fahren" هنا يستخدم "sein" في Perfekt عندما يدل على الانتقال.
+
+المستخدم:
+اشرح لي Perfekt
+
+الرد:
+Perfekt هو زمن نستخدمه كثيراً للحديث عن الماضي.
+
+مثال:
+Ich habe Deutsch gelernt.
+🇸🇦 لقد تعلمت الألمانية.
+
+`,
+
+          input: question
+
+        })
+
+      }
+    );
+
+  const data =
+    await response.json();
+
+  console.log(
+    "📦 Groq chat status:",
+    response.status
+  );
+
+  if (!response.ok) {
+
+    console.log(
+      JSON.stringify(
+        data,
+        null,
+        2
+      )
+    );
+
+    throw new Error(
+      data?.error?.message ||
+      "Groq chat request failed."
+    );
+
+  }
+
+  let answer = "";
+
+  if (
+    typeof data.output_text ===
+    "string"
+  ) {
+
+    answer =
+      data.output_text.trim();
+
+  }
+
+  if (
+    !answer &&
+    Array.isArray(data.output)
+  ) {
+
+    for (
+      const item of data.output
+    ) {
+
+      if (
+        item?.type === "message" &&
+        Array.isArray(item.content)
+      ) {
+
+        for (
+          const content of item.content
+        ) {
+
+          if (
+            content?.type ===
+              "output_text" &&
+            typeof content.text ===
+              "string"
+          ) {
+
+            answer =
+              content.text.trim();
+
+            break;
+
+          }
+
+        }
+
+      }
+
+      if (answer)
+        break;
+
+    }
+
+  }
+
+  if (!answer) {
+
+    throw new Error(
+      "Groq returned empty chat answer."
+    );
+
+  }
+
+  console.log(
+    "🤖 Chat answer generated."
+  );
+
+  return answer;
+
+}
+
+// ==================================================
+// PARSE FIELD
+// ==================================================
+
+function getField(
+  text,
+  field,
+  nextFields = []
+) {
+
+  const endPattern =
     nextFields.length
       ? `(?=\\n(?:${nextFields.join("|")}):)`
       : "$";
@@ -432,7 +681,7 @@ function getField(text, field, nextFields = []) {
 }
 
 // ==================================================
-// PARSE POLL CONTENT
+// PARSE POLL
 // ==================================================
 
 function parsePollContent(text) {
@@ -518,11 +767,13 @@ function parsePollContent(text) {
     title,
     content,
     question,
+
     options: [
       option1,
       option2,
       option3
     ],
+
     answer:
       Number(answer)
 
@@ -654,13 +905,16 @@ function parseVerbs(text) {
     i++
   ) {
 
+    const nextField =
+      i < 5
+        ? [`VERB${i + 1}`]
+        : [];
+
     const value =
       getField(
         text,
         `VERB${i}`,
-        [
-          `VERB${i + 1}`
-        ]
+        nextField
       );
 
     if (value) {
@@ -684,7 +938,7 @@ function parseVerbs(text) {
 }
 
 // ==================================================
-// CREATE CONTENT
+// GENERATE CONTENT
 // ==================================================
 
 async function generateContent() {
@@ -710,14 +964,18 @@ async function generateContent() {
   ) {
 
     instruction = `
+
 النوع: DIALOGUE
 
 الموضوع:
 ${topic}
 
 أنشئ حواراً طبيعياً بمستوى B1.
+
 الحوار 4 إلى 6 أسطر فقط.
+
 بعده سؤال فهم واحد و3 اختيارات.
+
 `;
 
   }
@@ -727,11 +985,15 @@ ${topic}
   ) {
 
     instruction = `
+
 النوع: WORD
 
 اختر كلمة B1 مرتبطة بالحياة اليومية.
+
 لا تختار كلمة سهلة جداً.
+
 كلمة واحدة فقط مع مثال واحد.
+
 `;
 
   }
@@ -741,11 +1003,15 @@ ${topic}
   ) {
 
     instruction = `
+
 النوع: GRAMMAR
 
 اختر قاعدة B1 واحدة.
+
 اشرحها باختصار شديد.
+
 مثال واحد فقط.
+
 `;
 
   }
@@ -755,17 +1021,20 @@ ${topic}
   ) {
 
     instruction = `
+
 النوع: VERBS
 
 اختر 5 أفعال B1 مختلفة ومفيدة.
 
 لكل فعل:
+
 Infinitiv
 Präteritum
 Perfekt
 المعنى بالعربية.
 
 لا تكتب أمثلة.
+
 `;
 
   }
@@ -775,14 +1044,18 @@ Perfekt
   ) {
 
     instruction = `
+
 النوع: SITUATION
 
 الموضوع:
 ${topic}
 
 أنشئ موقفاً عملياً قصيراً بمستوى B1.
+
 4 إلى 6 أسطر.
+
 بعده سؤال فهم واحد و3 اختيارات.
+
 `;
 
   }
@@ -824,12 +1097,14 @@ async function sendPollContent(
 
   }
 
-  let messageText =
+  const messageText =
     "🇩🇪💬 *" +
     parsed.title +
     "*\n\n" +
+
     parsed.content +
     "\n\n" +
+
     "❓ *" +
     parsed.question +
     "*";
@@ -1063,10 +1338,8 @@ async function sendContent(
       await generateContent();
 
     if (
-      data.type ===
-        "dialogue" ||
-      data.type ===
-        "situation"
+      data.type === "dialogue" ||
+      data.type === "situation"
     ) {
 
       await sendPollContent(
@@ -1078,8 +1351,7 @@ async function sendContent(
     }
 
     else if (
-      data.type ===
-      "word"
+      data.type === "word"
     ) {
 
       await sendWord(
@@ -1091,8 +1363,7 @@ async function sendContent(
     }
 
     else if (
-      data.type ===
-      "grammar"
+      data.type === "grammar"
     ) {
 
       await sendGrammar(
@@ -1104,8 +1375,7 @@ async function sendContent(
     }
 
     else if (
-      data.type ===
-      "verbs"
+      data.type === "verbs"
     ) {
 
       await sendVerbs(
@@ -1200,6 +1470,63 @@ function getMessageText(msg) {
 }
 
 // ==================================================
+// START CONTENT INTERVAL
+// ==================================================
+
+function startContentInterval() {
+
+  if (
+    contentIntervalStarted
+  ) {
+
+    return;
+
+  }
+
+  contentIntervalStarted = true;
+
+  console.log(
+    "⏱️ Automatic content scheduler started."
+  );
+
+  setInterval(
+    async () => {
+
+      if (!globalSock)
+        return;
+
+      for (
+        const groupId
+        of ALLOWED_GROUPS
+      ) {
+
+        try {
+
+          await sendContent(
+            globalSock,
+            groupId
+          );
+
+        }
+
+        catch (error) {
+
+          console.log(
+            "❌ Automatic content error:",
+            error.message
+          );
+
+        }
+
+      }
+
+    },
+    CONTENT_INTERVAL
+  );
+
+}
+
+// ==================================================
 // START BOT
 // ==================================================
 
@@ -1280,6 +1607,7 @@ async function startBot() {
         ) {
 
           console.log("");
+
           console.log(
             "======================================"
           );
@@ -1293,7 +1621,11 @@ async function startBot() {
           );
 
           console.log(
-            "💬 Dialogues"
+            "💬 AI Chat: $question"
+          );
+
+          console.log(
+            "📚 Dialogues"
           );
 
           console.log(
@@ -1321,6 +1653,8 @@ async function startBot() {
           );
 
           console.log("");
+
+          startContentInterval();
 
         }
 
@@ -1435,6 +1769,7 @@ async function startBot() {
           );
 
         console.log("");
+
         console.log(
           "======================================"
         );
@@ -1498,6 +1833,7 @@ async function startBot() {
             if (!jid)
               continue;
 
+            // المجموعة فقط
             if (
               !jid.endsWith(
                 "@g.us"
@@ -1537,7 +1873,8 @@ async function startBot() {
                     "🇩🇪🤖 German B1 AI Bot\n\n" +
                     "✅ البوت يعمل.\n" +
                     "🧠 Groq متصل.\n" +
-                    "📚 نظام B1 يعمل."
+                    "📚 نظام B1 يعمل.\n" +
+                    "💬 AI Chat يعمل باستخدام $"
                 }
               );
 
@@ -1595,6 +1932,14 @@ async function startBot() {
                     "🛒 مواقف الحياة اليومية\n" +
                     "📝 Poll بثلاثة اختيارات\n\n" +
 
+                    "🤖 *AI Chat*\n" +
+                    "اكتب السؤال بهذا الشكل:\n\n" +
+
+                    "$hi\n" +
+                    "$ما معنى nachfragen؟\n" +
+                    "$صحح لي هذه الجملة\n" +
+                    "$اشرح لي Perfekt\n\n" +
+
                     "⚡ !now\n" +
                     "إرسال محتوى تجريبي الآن."
                 }
@@ -1605,7 +1950,7 @@ async function startBot() {
             }
 
             // ==================================================
-            // AI
+            // AI CHAT
             // ==================================================
 
             if (
@@ -1624,24 +1969,27 @@ async function startBot() {
             if (!aiQuestion)
               continue;
 
+            console.log(
+              "🤖 AI QUESTION:",
+              aiQuestion
+            );
+
             const answer =
-              await askAI(
-                `
-السؤال من أحد أعضاء مجموعة ألمانية:
-
-${aiQuestion}
-
-أجب كمدرس ألمانية B1.
-`
+              await askChatAI(
+                aiQuestion
               );
 
             await sock.sendMessage(
               jid,
               {
                 text:
-                  "🇩🇪🤖 German B1 Bot\n\n" +
+                  "🇩🇪🤖 *German B1 Bot*\n\n" +
                   answer
               }
+            );
+
+            console.log(
+              "✅ AI reply sent."
             );
 
           }
@@ -1653,50 +2001,34 @@ ${aiQuestion}
               error.message
             );
 
+            // إرسال خطأ بسيط للمستخدم
+            try {
+
+              await sock.sendMessage(
+                msg.key.remoteJid,
+                {
+                  text:
+                    "❌ حدث خطأ أثناء معالجة طلبك.\n" +
+                    "حاول مرة أخرى بعد قليل."
+                }
+              );
+
+            }
+
+            catch (sendError) {
+
+              console.log(
+                "❌ Could not send error message:",
+                sendError.message
+              );
+
+            }
+
           }
 
         }
 
       }
-    );
-
-    // ==================================================
-    // AUTOMATIC CONTENT
-    // ==================================================
-
-    setInterval(
-      async () => {
-
-        if (!globalSock)
-          return;
-
-        for (
-          const groupId
-          of ALLOWED_GROUPS
-        ) {
-
-          try {
-
-            await sendContent(
-              globalSock,
-              groupId
-            );
-
-          }
-
-          catch (error) {
-
-            console.log(
-              "❌ Automatic content error:",
-              error.message
-            );
-
-          }
-
-        }
-
-      },
-      CONTENT_INTERVAL
     );
 
   }
