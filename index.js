@@ -5,6 +5,11 @@ const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
 
+const { execFile } = require("child_process");
+const { promisify } = require("util");
+
+const execFileAsync = promisify(execFile);
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -17,16 +22,24 @@ const {
 // SETTINGS
 // ==================================================
 
-const PORT = Number(process.env.PORT || 10000);
+const PORT = Number(
+  process.env.PORT || 10000
+);
 
 const ALLOWED_GROUPS = [
   "120363429927673856@g.us"
 ];
 
-const CONTENT_INTERVAL = 60 * 1000;
+const CONTENT_INTERVAL =
+  60 * 1000;
+
 const CORRECT_POINTS = 10;
 
-const POINTS_FILE = path.join(__dirname, "points.json");
+const POINTS_FILE =
+  path.join(
+    __dirname,
+    "points.json"
+  );
 
 // ==================================================
 // SERVER
@@ -35,12 +48,20 @@ const POINTS_FILE = path.join(__dirname, "points.json");
 const app = express();
 
 app.get("/", (req, res) => {
-  res.send("🇩🇪 German B1 AI Bot is running!");
+  res.send(
+    "🇩🇪 German B1 AI Bot is running!"
+  );
 });
 
-app.listen(PORT, "0.0.0.0", () => {
-  console.log(`🌐 Server started on ${PORT}`);
-});
+app.listen(
+  PORT,
+  "0.0.0.0",
+  () => {
+    console.log(
+      `🌐 Server started on ${PORT}`
+    );
+  }
+);
 
 // ==================================================
 // STATE
@@ -48,10 +69,13 @@ app.listen(PORT, "0.0.0.0", () => {
 
 let globalSock = null;
 let intervalStarted = false;
+
 let points = {};
 
 const names = new Map();
-const textQuestions = new Map();
+
+const textQuestions =
+  new Map();
 
 let contentIndex = 0;
 
@@ -60,7 +84,9 @@ let contentIndex = 0;
 // ==================================================
 
 function norm(jid) {
-  if (!jid) return "";
+  if (!jid) {
+    return "";
+  }
 
   try {
     return jidNormalizedUser(jid);
@@ -75,10 +101,17 @@ function norm(jid) {
 
 function loadPoints() {
   try {
-    if (fs.existsSync(POINTS_FILE)) {
+    if (
+      fs.existsSync(
+        POINTS_FILE
+      )
+    ) {
       points =
         JSON.parse(
-          fs.readFileSync(POINTS_FILE, "utf8")
+          fs.readFileSync(
+            POINTS_FILE,
+            "utf8"
+          )
         ) || {};
     }
   } catch (error) {
@@ -93,15 +126,23 @@ function loadPoints() {
 
 function savePoints() {
   try {
-    const tmp = POINTS_FILE + ".tmp";
+    const tmp =
+      POINTS_FILE + ".tmp";
 
     fs.writeFileSync(
       tmp,
-      JSON.stringify(points, null, 2),
+      JSON.stringify(
+        points,
+        null,
+        2
+      ),
       "utf8"
     );
 
-    fs.renameSync(tmp, POINTS_FILE);
+    fs.renameSync(
+      tmp,
+      POINTS_FILE
+    );
   } catch (error) {
     console.log(
       "❌ Save points error:",
@@ -110,13 +151,28 @@ function savePoints() {
   }
 }
 
-function rememberName(jid, name) {
+function rememberName(
+  jid,
+  name
+) {
   const id = norm(jid);
-  const cleanName = String(name || "").trim();
 
-  if (!id || !cleanName) return;
+  const cleanName =
+    String(
+      name || ""
+    ).trim();
 
-  names.set(id, cleanName);
+  if (
+    !id ||
+    !cleanName
+  ) {
+    return;
+  }
+
+  names.set(
+    id,
+    cleanName
+  );
 
   if (!points[id]) {
     points[id] = {
@@ -124,7 +180,8 @@ function rememberName(jid, name) {
       points: 0
     };
   } else {
-    points[id].name = cleanName;
+    points[id].name =
+      cleanName;
   }
 }
 
@@ -139,25 +196,39 @@ function displayName(jid) {
   );
 }
 
-function addPoints(jid, amount, name) {
+function addPoints(
+  jid,
+  amount,
+  name
+) {
   const id = norm(jid);
 
-  if (!id) return 0;
+  if (!id) {
+    return 0;
+  }
 
   if (!points[id]) {
     points[id] = {
-      name: name || displayName(id),
+      name:
+        name ||
+        displayName(id),
+
       points: 0
     };
   }
 
   if (name) {
-    points[id].name = name;
+    points[id].name =
+      name;
   }
 
   points[id].points =
-    Number(points[id].points || 0) +
-    Number(amount || 0);
+    Number(
+      points[id].points || 0
+    ) +
+    Number(
+      amount || 0
+    );
 
   savePoints();
 
@@ -165,14 +236,32 @@ function addPoints(jid, amount, name) {
 }
 
 function topPlayers() {
-  return Object.entries(points)
-    .map(([jid, data]) => ({
-      jid,
-      name: data.name || displayName(jid),
-      points: Number(data.points || 0)
-    }))
-    .filter(player => player.points > 0)
-    .sort((a, b) => b.points - a.points)
+  return Object.entries(
+    points
+  )
+    .map(
+      ([jid, data]) => ({
+        jid,
+
+        name:
+          data.name ||
+          displayName(jid),
+
+        points:
+          Number(
+            data.points || 0
+          )
+      })
+    )
+    .filter(
+      player =>
+        player.points > 0
+    )
+    .sort(
+      (a, b) =>
+        b.points -
+        a.points
+    )
     .slice(0, 10);
 }
 
@@ -180,32 +269,47 @@ function topPlayers() {
 // GROQ
 // ==================================================
 
-async function groq(input, instructions) {
-  const apiKey = process.env.GROQ_API_KEY;
+async function groq(
+  input,
+  instructions
+) {
+  const apiKey =
+    process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    throw new Error("GROQ_API_KEY is missing.");
+    throw new Error(
+      "GROQ_API_KEY is missing."
+    );
   }
 
-  const response = await fetch(
-    "https://api.groq.com/openai/v1/responses",
-    {
-      method: "POST",
+  const response =
+    await fetch(
+      "https://api.groq.com/openai/v1/responses",
+      {
+        method: "POST",
 
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${apiKey}`
-      },
+        headers: {
+          "Content-Type":
+            "application/json",
 
-      body: JSON.stringify({
-        model: "openai/gpt-oss-20b",
-        instructions,
-        input
-      })
-    }
-  );
+          "Authorization":
+            `Bearer ${apiKey}`
+        },
 
-  const data = await response.json();
+        body:
+          JSON.stringify({
+            model:
+              "openai/gpt-oss-20b",
+
+            instructions,
+
+            input
+          })
+      }
+    );
+
+  const data =
+    await response.json();
 
   if (!response.ok) {
     throw new Error(
@@ -215,7 +319,8 @@ async function groq(input, instructions) {
   }
 
   if (
-    typeof data.output_text === "string" &&
+    typeof data.output_text ===
+      "string" &&
     data.output_text.trim()
   ) {
     return data.output_text.trim();
@@ -223,13 +328,22 @@ async function groq(input, instructions) {
 
   let output = "";
 
-  for (const item of data.output || []) {
-    for (const content of item.content || []) {
+  for (
+    const item of
+    data.output || []
+  ) {
+    for (
+      const content of
+      item.content || []
+    ) {
       if (
-        content.type === "output_text" &&
-        typeof content.text === "string"
+        content.type ===
+          "output_text" &&
+        typeof content.text ===
+          "string"
       ) {
-        output += content.text;
+        output +=
+          content.text;
       }
     }
   }
@@ -247,9 +361,12 @@ async function groq(input, instructions) {
 // AI CHAT
 // ==================================================
 
-async function chatAI(question) {
+async function chatAI(
+  question
+) {
   return groq(
     question,
+
     `
 أنت مدرس لغة ألمانية B1 ومساعد ذكي.
 
@@ -284,7 +401,10 @@ ANSWER:
 // EDUCATIONAL AI
 // ==================================================
 
-async function educationalAI(type, topic) {
+async function educationalAI(
+  type,
+  topic
+) {
   return groq(
     `النوع: ${type}
 
@@ -387,30 +507,81 @@ Infinitiv | Präteritum | Perfekt | المعنى
 // PARSER
 // ==================================================
 
-function field(text, key, next = []) {
-  const end = next.length
-    ? `(?=\\n(?:${next.join("|")}):)`
-    : "$";
+function field(
+  text,
+  key,
+  next = []
+) {
+  const end =
+    next.length
+      ? `(?=\\n(?:${next.join("|")}):)`
+      : "$";
 
-  const regex = new RegExp(
-    `${key}:\\s*([\\s\\S]*?)${end}`,
-    "i"
-  );
+  const regex =
+    new RegExp(
+      `${key}:\\s*([\\s\\S]*?)${end}`,
+      "i"
+    );
 
-  const match = text.match(regex);
+  const match =
+    text.match(regex);
 
-  return match ? match[1].trim() : "";
+  return match
+    ? match[1].trim()
+    : "";
 }
 
-function parseQuestion(text) {
+function parseQuestion(
+  text
+) {
   const data = {
-    title: field(text, "TITLE", ["CONTENT"]),
-    content: field(text, "CONTENT", ["QUESTION"]),
-    question: field(text, "QUESTION", ["OPTION1"]),
-    option1: field(text, "OPTION1", ["OPTION2"]),
-    option2: field(text, "OPTION2", ["OPTION3"]),
-    option3: field(text, "OPTION3", ["ANSWER"]),
-    answer: field(text, "ANSWER")
+    title:
+      field(
+        text,
+        "TITLE",
+        ["CONTENT"]
+      ),
+
+    content:
+      field(
+        text,
+        "CONTENT",
+        ["QUESTION"]
+      ),
+
+    question:
+      field(
+        text,
+        "QUESTION",
+        ["OPTION1"]
+      ),
+
+    option1:
+      field(
+        text,
+        "OPTION1",
+        ["OPTION2"]
+      ),
+
+    option2:
+      field(
+        text,
+        "OPTION2",
+        ["OPTION3"]
+      ),
+
+    option3:
+      field(
+        text,
+        "OPTION3",
+        ["ANSWER"]
+      ),
+
+    answer:
+      field(
+        text,
+        "ANSWER"
+      )
   };
 
   if (
@@ -420,25 +591,49 @@ function parseQuestion(text) {
     !data.option1 ||
     !data.option2 ||
     !data.option3 ||
-    !/^[123]$/.test(data.answer)
+    !/^[123]$/.test(
+      data.answer
+    )
   ) {
     return null;
   }
 
-  data.answer = Number(data.answer);
+  data.answer =
+    Number(data.answer);
 
   return data;
 }
 
-function parseWord(text) {
+function parseWord(
+  text
+) {
   const data = {
-    word: field(text, "WORD", ["TRANSLATION"]),
+    word:
+      field(
+        text,
+        "WORD",
+        ["TRANSLATION"]
+      ),
+
     translation:
-      field(text, "TRANSLATION", ["EXAMPLE"]),
+      field(
+        text,
+        "TRANSLATION",
+        ["EXAMPLE"]
+      ),
+
     example:
-      field(text, "EXAMPLE", ["EXAMPLE_TRANSLATION"]),
+      field(
+        text,
+        "EXAMPLE",
+        ["EXAMPLE_TRANSLATION"]
+      ),
+
     exampleTranslation:
-      field(text, "EXAMPLE_TRANSLATION")
+      field(
+        text,
+        "EXAMPLE_TRANSLATION"
+      )
   };
 
   if (
@@ -453,19 +648,36 @@ function parseWord(text) {
   return data;
 }
 
-function parseGrammar(text) {
+function parseGrammar(
+  text
+) {
   const data = {
     title:
-      field(text, "TITLE", ["EXPLANATION"]),
+      field(
+        text,
+        "TITLE",
+        ["EXPLANATION"]
+      ),
 
     explanation:
-      field(text, "EXPLANATION", ["EXAMPLE"]),
+      field(
+        text,
+        "EXPLANATION",
+        ["EXAMPLE"]
+      ),
 
     example:
-      field(text, "EXAMPLE", ["TRANSLATION"]),
+      field(
+        text,
+        "EXAMPLE",
+        ["TRANSLATION"]
+      ),
 
     translation:
-      field(text, "TRANSLATION")
+      field(
+        text,
+        "TRANSLATION"
+      )
   };
 
   if (
@@ -480,15 +692,24 @@ function parseGrammar(text) {
   return data;
 }
 
-function parseVerbs(text) {
+function parseVerbs(
+  text
+) {
   const verbs = [];
 
-  for (let i = 1; i <= 5; i++) {
-    const value = field(
-      text,
-      `VERB${i}`,
-      i < 5 ? [`VERB${i + 1}`] : []
-    );
+  for (
+    let i = 1;
+    i <= 5;
+    i++
+  ) {
+    const value =
+      field(
+        text,
+        `VERB${i}`,
+        i < 5
+          ? [`VERB${i + 1}`]
+          : []
+      );
 
     if (value) {
       verbs.push(value);
@@ -542,14 +763,18 @@ const TOPICS = [
 
 function getRandomTopic() {
   return TOPICS[
-    Math.floor(Math.random() * TOPICS.length)
+    Math.floor(
+      Math.random() *
+      TOPICS.length
+    )
   ];
 }
 
 function getNextType() {
   const type =
     CONTENT_TYPES[
-      contentIndex % CONTENT_TYPES.length
+      contentIndex %
+      CONTENT_TYPES.length
     ];
 
   contentIndex++;
@@ -558,11 +783,21 @@ function getNextType() {
 }
 
 async function generateContent() {
-  const type = getNextType();
-  const topic = getRandomTopic();
+  const type =
+    getNextType();
 
-  console.log("🎯 Type:", type);
-  console.log("📚 Topic:", topic);
+  const topic =
+    getRandomTopic();
+
+  console.log(
+    "🎯 Type:",
+    type
+  );
+
+  console.log(
+    "📚 Topic:",
+    topic
+  );
 
   const text =
     await educationalAI(
@@ -630,7 +865,9 @@ ${parsed.content}
     jid,
     {
       questionId,
-      answer: parsed.answer,
+
+      answer:
+        parsed.answer,
 
       options: [
         parsed.option1,
@@ -638,10 +875,14 @@ ${parsed.content}
         parsed.option3
       ],
 
-      title: parsed.title,
-      question: parsed.question,
+      title:
+        parsed.title,
 
-      answered: new Set()
+      question:
+        parsed.question,
+
+      answered:
+        new Set()
     }
   );
 
@@ -782,8 +1023,10 @@ async function sendContent(
       await generateContent();
 
     if (
-      data.type === "dialogue" ||
-      data.type === "situation"
+      data.type ===
+        "dialogue" ||
+      data.type ===
+        "situation"
     ) {
       await sendQuestion(
         sock,
@@ -821,6 +1064,7 @@ async function sendContent(
         data.text
       );
     }
+
   } catch (error) {
     console.log(
       "❌ Content error:",
@@ -833,11 +1077,17 @@ async function sendContent(
 // GET MESSAGE TEXT
 // ==================================================
 
-function getMessageText(msg) {
+function getMessageText(
+  msg
+) {
   if (
-    msg.message?.conversation
+    msg.message
+      ?.conversation
   ) {
-    return msg.message.conversation;
+    return (
+      msg.message
+        .conversation
+    );
   }
 
   if (
@@ -894,13 +1144,18 @@ async function findUserName(
   groupJid,
   userJid
 ) {
-  const id = norm(userJid);
+  const id =
+    norm(userJid);
 
-  if (names.has(id)) {
+  if (
+    names.has(id)
+  ) {
     return names.get(id);
   }
 
-  if (points[id]?.name) {
+  if (
+    points[id]?.name
+  ) {
     return points[id].name;
   }
 
@@ -942,6 +1197,7 @@ async function findUserName(
         return name;
       }
     }
+
   } catch (error) {
     console.log(
       "⚠️ Name lookup:",
@@ -969,7 +1225,9 @@ async function handleTextAnswer(
     return false;
   }
 
-  if (!/^[123]$/.test(text)) {
+  if (
+    !/^[123]$/.test(text)
+  ) {
     return false;
   }
 
@@ -1011,7 +1269,8 @@ async function handleTextAnswer(
     );
 
   if (
-    answer === question.answer
+    answer ===
+    question.answer
   ) {
     const total =
       addPoints(
@@ -1033,6 +1292,7 @@ async function handleTextAnswer(
 🏆 مجموع نقاطك: ${total}`
       }
     );
+
   } else {
     const correct =
       question.options[
@@ -1057,7 +1317,7 @@ ${question.answer}️⃣ ${correct}`
 }
 
 // ==================================================
-// POINTS COMMANDS
+// POINTS
 // ==================================================
 
 async function sendMyPoints(
@@ -1070,7 +1330,8 @@ async function sendMyPoints(
 
   const total =
     Number(
-      points[id]?.points || 0
+      points[id]?.points ||
+      0
     );
 
   const name =
@@ -1220,7 +1481,9 @@ async function createGermanVoice(
 
             voice_settings: {
               stability: 0.5,
-              similarity_boost: 0.75
+
+              similarity_boost:
+                0.75
             }
           })
       }
@@ -1260,6 +1523,7 @@ async function createGermanVoice(
 
 // ==================================================
 // SEND VOICE
+// MP3 -> OGG/OPUS -> WHATSAPP
 // ==================================================
 
 async function sendVoice(
@@ -1282,10 +1546,19 @@ async function sendVoice(
     return;
   }
 
-  const outputFile =
+  const timestamp =
+    Date.now();
+
+  const mp3File =
     path.join(
       __dirname,
-      `voice_${Date.now()}.mp3`
+      `voice_${timestamp}.mp3`
+    );
+
+  const oggFile =
+    path.join(
+      __dirname,
+      `voice_${timestamp}.ogg`
     );
 
   let lastError = null;
@@ -1301,56 +1574,131 @@ async function sendVoice(
           `🎙️ Creating German voice... attempt ${attempt}/3`
         );
 
+        // ==========================================
+        // ELEVENLABS
+        // ==========================================
+
         await createGermanVoice(
           cleanText,
-          outputFile
+          mp3File
         );
 
         if (
           !fs.existsSync(
-            outputFile
+            mp3File
           )
         ) {
           throw new Error(
-            "Voice file was not created."
+            "MP3 voice file was not created."
           );
         }
 
-        const stat =
+        const mp3Stat =
           fs.statSync(
-            outputFile
+            mp3File
           );
 
         if (
-          stat.size < 1000
+          mp3Stat.size < 1000
         ) {
           throw new Error(
-            "Voice file is too small."
+            "MP3 voice file is too small."
           );
         }
+
+        console.log(
+          `🎵 MP3 created: ${mp3Stat.size} bytes`
+        );
+
+        // ==========================================
+        // MP3 -> OGG OPUS
+        // ==========================================
+
+        console.log(
+          "🔄 Converting MP3 to OGG/Opus..."
+        );
+
+        await execFileAsync(
+          "ffmpeg",
+          [
+            "-y",
+
+            "-i",
+            mp3File,
+
+            "-c:a",
+            "libopus",
+
+            "-b:a",
+            "64k",
+
+            "-ar",
+            "48000",
+
+            "-ac",
+            "1",
+
+            "-vn",
+
+            oggFile
+          ]
+        );
+
+        if (
+          !fs.existsSync(
+            oggFile
+          )
+        ) {
+          throw new Error(
+            "OGG voice file was not created."
+          );
+        }
+
+        const oggStat =
+          fs.statSync(
+            oggFile
+          );
+
+        if (
+          oggStat.size < 1000
+        ) {
+          throw new Error(
+            "OGG voice file is too small."
+          );
+        }
+
+        console.log(
+          `🎧 OGG/Opus created: ${oggStat.size} bytes`
+        );
+
+        // ==========================================
+        // SEND VOICE NOTE
+        // ==========================================
 
         await sock.sendMessage(
           jid,
           {
             audio:
               fs.readFileSync(
-                outputFile
+                oggFile
               ),
 
             mimetype:
-              "audio/mpeg",
+              "audio/ogg; codecs=opus",
 
             ptt: true
           }
         );
 
         console.log(
-          "✅ German voice sent."
+          "✅ German voice sent successfully."
         );
 
         return;
+
       } catch (error) {
-        lastError = error;
+        lastError =
+          error;
 
         console.log(
           `❌ Voice attempt ${attempt} failed:`,
@@ -1377,15 +1725,33 @@ async function sendVoice(
         "Voice generation failed."
       )
     );
+
   } finally {
+
+    // ==========================================
+    // CLEAN TEMP FILES
+    // ==========================================
+
     try {
       if (
         fs.existsSync(
-          outputFile
+          mp3File
         )
       ) {
         fs.unlinkSync(
-          outputFile
+          mp3File
+        );
+      }
+    } catch {}
+
+    try {
+      if (
+        fs.existsSync(
+          oggFile
+        )
+      ) {
+        fs.unlinkSync(
+          oggFile
         );
       }
     } catch {}
@@ -1402,6 +1768,38 @@ async function startBot() {
       "🚀 Starting German B1 AI Bot..."
     );
 
+    // ==========================================
+    // CHECK FFMPEG
+    // ==========================================
+
+    try {
+      await execFileAsync(
+        "ffmpeg",
+        ["-version"]
+      );
+
+      console.log(
+        "🎧 FFmpeg detected."
+      );
+
+    } catch {
+      console.log(
+        "❌ FFmpeg is NOT installed."
+      );
+
+      console.log(
+        "Install it with:"
+      );
+
+      console.log(
+        "sudo apt-get update && sudo apt-get install -y ffmpeg"
+      );
+    }
+
+    // ==========================================
+    // WHATSAPP AUTH
+    // ==========================================
+
     const {
       state,
       saveCreds
@@ -1416,7 +1814,8 @@ async function startBot() {
 
         logger:
           pino({
-            level: "silent"
+            level:
+              "silent"
           }),
 
         browser:
@@ -1439,9 +1838,9 @@ async function startBot() {
       saveCreds
     );
 
-    // ==================================================
+    // ==========================================
     // CONNECTION
-    // ==================================================
+    // ==========================================
 
     sock.ev.on(
       "connection.update",
@@ -1452,7 +1851,8 @@ async function startBot() {
         } = update;
 
         if (
-          connection === "open"
+          connection ===
+          "open"
         ) {
           console.log(
             "======================================"
@@ -1483,6 +1883,10 @@ async function startBot() {
           );
 
           console.log(
+            "🎧 MP3 -> OGG/Opus ready"
+          );
+
+          console.log(
             "👥 Group: 120363429927673856@g.us"
           );
 
@@ -1492,7 +1896,8 @@ async function startBot() {
         }
 
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
           globalSock =
             null;
@@ -1504,7 +1909,8 @@ async function startBot() {
               lastDisconnect
                 ?.error
                 ?.output
-                ?.statusCode || 0;
+                ?.statusCode ||
+              0;
           } catch {}
 
           console.log(
@@ -1535,15 +1941,16 @@ async function startBot() {
       }
     );
 
-    // ==================================================
+    // ==========================================
     // PAIRING
-    // ==================================================
+    // ==========================================
 
     if (
       !state.creds.registered
     ) {
       const phone =
-        process.env.WHATSAPP_NUMBER;
+        process.env
+          .WHATSAPP_NUMBER;
 
       if (!phone) {
         throw new Error(
@@ -1575,28 +1982,28 @@ async function startBot() {
         "📱 WHATSAPP PAIRING CODE:"
       );
 
-      console.log(
-        code
-      );
+      console.log(code);
 
       console.log(
         "======================================"
       );
     }
 
-    // ==================================================
+    // ==========================================
     // MESSAGES
-    // ==================================================
+    // ==========================================
 
     sock.ev.on(
       "messages.upsert",
       async ({
         messages
       }) => {
+
         for (
           const msg of messages
         ) {
           try {
+
             if (
               !msg?.message
             ) {
@@ -1657,9 +2064,9 @@ async function startBot() {
             const lower =
               text.toLowerCase();
 
-            // ==================================================
+            // ==========================================
             // ANSWERS
-            // ==================================================
+            // ==========================================
 
             if (
               sender &&
@@ -1682,9 +2089,9 @@ async function startBot() {
               }
             }
 
-            // ==================================================
+            // ==========================================
             // TEST
-            // ==================================================
+            // ==========================================
 
             if (
               lower ===
@@ -1708,6 +2115,8 @@ async function startBot() {
 
 🎙️ ElevenLabs Voice يعمل
 
+🎧 OGG/Opus Voice يعمل
+
 🏆 !top يعمل`
                 }
               );
@@ -1715,15 +2124,18 @@ async function startBot() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // VOICE
-            // ==================================================
+            // ==========================================
 
             if (
+              lower ===
+                "!voice" ||
               lower.startsWith(
-                "!voice"
+                "!voice "
               )
             ) {
+
               const voiceText =
                 text
                   .slice(6)
@@ -1739,6 +2151,7 @@ async function startBot() {
 `🎙️ اكتب الجملة بعد !voice
 
 مثال:
+
 !voice Guten Morgen, wie geht es dir?`
                   }
                 );
@@ -1747,14 +2160,17 @@ async function startBot() {
               }
 
               try {
+
                 await sendVoice(
                   sock,
                   jid,
                   voiceText
                 );
+
               } catch (
                 error
               ) {
+
                 console.log(
                   "❌ Voice error:",
                   error.message
@@ -1764,7 +2180,10 @@ async function startBot() {
                   jid,
                   {
                     text:
-                      "❌ تعذر إنشاء الصوت بعد 3 محاولات. حاول مرة أخرى."
+`❌ تعذر إنشاء الصوت.
+
+الخطأ:
+${error.message}`
                   }
                 );
               }
@@ -1772,9 +2191,9 @@ async function startBot() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // POINTS
-            // ==================================================
+            // ==========================================
 
             if (
               lower ===
@@ -1782,6 +2201,7 @@ async function startBot() {
               lower ===
                 "!points"
             ) {
+
               if (
                 sender
               ) {
@@ -1795,14 +2215,15 @@ async function startBot() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // TOP
-            // ==================================================
+            // ==========================================
 
             if (
               lower ===
               "!top"
             ) {
+
               await sendTopPlayers(
                 sock,
                 jid
@@ -1811,14 +2232,15 @@ async function startBot() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // HELP
-            // ==================================================
+            // ==========================================
 
             if (
               lower ===
               "!help"
             ) {
+
               await sendHelp(
                 sock,
                 jid
@@ -1827,19 +2249,21 @@ async function startBot() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // NOW
-            // ==================================================
+            // ==========================================
 
             if (
               lower ===
               "!now"
             ) {
+
               if (
                 ALLOWED_GROUPS.includes(
                   jid
                 )
               ) {
+
                 await sendContent(
                   sock,
                   jid
@@ -1849,15 +2273,16 @@ async function startBot() {
               continue;
             }
 
-            // ==================================================
+            // ==========================================
             // AI
-            // ==================================================
+            // ==========================================
 
             if (
               text.startsWith(
                 "$"
               )
             ) {
+
               const question =
                 text
                   .slice(1)
@@ -1870,6 +2295,7 @@ async function startBot() {
               }
 
               try {
+
                 console.log(
                   "🤖 AI CHAT:",
                   question
@@ -1889,9 +2315,11 @@ async function startBot() {
 ${answer}`
                   }
                 );
+
               } catch (
                 error
               ) {
+
                 console.log(
                   "❌ AI error:",
                   error.message
@@ -1904,6 +2332,7 @@ ${answer}`
 `❌ حدث خطأ في الذكاء الاصطناعي.
 
 تأكد من:
+
 GROQ_API_KEY
 
 في Daytona.`
@@ -1917,6 +2346,7 @@ GROQ_API_KEY
           } catch (
             error
           ) {
+
             console.log(
               "❌ Message error:",
               error.message
@@ -1926,17 +2356,20 @@ GROQ_API_KEY
       }
     );
 
-    // ==================================================
+    // ==========================================
     // AUTOMATIC CONTENT
-    // ==================================================
+    // ==========================================
 
     if (
       !intervalStarted
     ) {
-      intervalStarted = true;
+
+      intervalStarted =
+        true;
 
       setInterval(
         async () => {
+
           if (
             !globalSock
           ) {
@@ -1947,20 +2380,25 @@ GROQ_API_KEY
             const group of
             ALLOWED_GROUPS
           ) {
+
             try {
+
               await sendContent(
                 globalSock,
                 group
               );
+
             } catch (
               error
             ) {
+
               console.log(
                 "❌ Automatic content error:",
                 error.message
               );
             }
           }
+
         },
         CONTENT_INTERVAL
       );
@@ -1973,6 +2411,7 @@ GROQ_API_KEY
   } catch (
     error
   ) {
+
     console.log(
       "❌ BOT START ERROR:",
       error.message
