@@ -3,8 +3,7 @@ const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
 
-const { EdgeTTS } =
-  require("node-edge-tts");
+const { EdgeTTS } = require("node-edge-tts");
 
 const {
   default: makeWASocket,
@@ -1827,35 +1826,164 @@ async function createGermanVoice(
   outputFile
 ) {
 
-  const tts =
-    new EdgeTTS({
+  const maxAttempts = 3;
 
-      voice:
-        "de-DE-ConradNeural",
+  let lastError = null;
 
-      lang:
-        "de-DE",
+  for (
+    let attempt = 1;
+    attempt <= maxAttempts;
+    attempt++
+  ) {
 
-      outputFormat:
-        "audio-24khz-48kbitrate-mono-mp3",
+    try {
 
-      rate:
-        "default",
+      console.log(
+        `🎙️ Creating German voice... attempt ${attempt}/${maxAttempts}`
+      );
 
-      pitch:
-        "default",
+      const tts =
+        new EdgeTTS({
 
-      volume:
-        "default",
+          // ========================================
+          // صوت ألماني طبيعي
+          // ========================================
 
-      timeout:
-        20000
+          voice:
+            "de-DE-ConradNeural",
 
-    });
+          lang:
+            "de-DE",
 
-  await tts.ttsPromise(
-    text,
-    outputFile
+          // ========================================
+          // MP3 عادي
+          // ========================================
+
+          outputFormat:
+            "audio-24khz-48kbitrate-mono-mp3",
+
+          // ========================================
+          // سرعة طبيعية
+          // ========================================
+
+          rate:
+            "default",
+
+          // ========================================
+          // نبرة طبيعية
+          // ========================================
+
+          pitch:
+            "default",
+
+          // ========================================
+          // مستوى صوت طبيعي
+          // ========================================
+
+          volume:
+            "default",
+
+          // ========================================
+          // وقت أطول للاتصال
+          // ========================================
+
+          timeout:
+            30000
+
+        });
+
+      await tts.ttsPromise(
+        text,
+        outputFile
+      );
+
+      if (
+        !fs.existsSync(
+          outputFile
+        )
+      ) {
+
+        throw new Error(
+          "Voice file was not created."
+        );
+
+      }
+
+      const stats =
+        fs.statSync(
+          outputFile
+        );
+
+      if (
+        stats.size < 1000
+      ) {
+
+        throw new Error(
+          "Voice file is empty or too small."
+        );
+
+      }
+
+      console.log(
+        "✅ German voice created successfully."
+      );
+
+      return true;
+
+    } catch (error) {
+
+      lastError =
+        error;
+
+      console.log(
+        `⚠️ Voice attempt ${attempt} failed:`,
+        error?.message ||
+        error
+      );
+
+      try {
+
+        if (
+          fs.existsSync(
+            outputFile
+          )
+        ) {
+
+          fs.unlinkSync(
+            outputFile
+          );
+
+        }
+
+      } catch {}
+
+      if (
+        attempt < maxAttempts
+      ) {
+
+        console.log(
+          "⏳ Waiting 2 seconds before retry..."
+        );
+
+        await new Promise(
+          resolve =>
+            setTimeout(
+              resolve,
+              2000
+            )
+        );
+
+      }
+
+    }
+
+  }
+
+  throw (
+    lastError ||
+    new Error(
+      "German voice creation failed."
+    )
   );
 
 }
@@ -1870,6 +1998,7 @@ async function sendVoice(
   text
 ) {
 
+  // الصوت يعمل داخل المجموعات فقط
   if (
     !jid.endsWith(
       "@g.us"
@@ -1889,7 +2018,11 @@ async function sendVoice(
   try {
 
     console.log(
-      "🎙️ Creating German voice..."
+      "🎙️ German voice request:"
+    );
+
+    console.log(
+      text
     );
 
     await createGermanVoice(
@@ -1909,6 +2042,10 @@ async function sendVoice(
 
     }
 
+    console.log(
+      "📤 Sending German voice..."
+    );
+
     await sock.sendMessage(
       jid,
       {
@@ -1921,14 +2058,15 @@ async function sendVoice(
         mimetype:
           "audio/mpeg",
 
+        // صوت عادي وليس Push-To-Talk
         ptt:
-          true
+          false
 
       }
     );
 
     console.log(
-      "🎙️ German voice sent."
+      "✅ German voice sent."
     );
 
   } finally {
@@ -1943,6 +2081,10 @@ async function sendVoice(
 
         fs.unlinkSync(
           outputFile
+        );
+
+        console.log(
+          "🗑️ Temporary voice file deleted."
         );
 
       }
@@ -2410,7 +2552,7 @@ async function startBot() {
                   {
 
                     text:
-                      "❌ حدث خطأ أثناء إنشاء الصوت."
+                      "❌ حدث خطأ أثناء إنشاء الصوت.\n\n🔄 تمت تجربة الاتصال عدة مرات ولم تنجح."
 
                   }
                 );
