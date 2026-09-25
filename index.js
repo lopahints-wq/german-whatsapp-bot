@@ -143,10 +143,7 @@ function rememberName(jid, name) {
 
   if (!id || !cleanName) return;
 
-  names.set(
-    id,
-    cleanName
-  );
+  names.set(id, cleanName);
 
   if (!points[id]) {
     points[id] = {
@@ -177,20 +174,14 @@ function displayName(jid) {
 // ADD POINTS
 // ==================================================
 
-function addPoints(
-  jid,
-  amount,
-  name
-) {
+function addPoints(jid, amount, name) {
   const id = norm(jid);
 
   if (!id) return 0;
 
   if (!points[id]) {
     points[id] = {
-      name:
-        name ||
-        displayName(id),
+      name: name || displayName(id),
       points: 0
     };
   }
@@ -200,12 +191,8 @@ function addPoints(
   }
 
   points[id].points =
-    Number(
-      points[id].points || 0
-    ) +
-    Number(
-      amount || 0
-    );
+    Number(points[id].points || 0) +
+    Number(amount || 0);
 
   savePoints();
 
@@ -224,13 +211,10 @@ function topPlayers() {
         data.name ||
         displayName(jid),
       points:
-        Number(
-          data.points || 0
-        )
+        Number(data.points || 0)
     }))
     .filter(
-      player =>
-        player.points > 0
+      player => player.points > 0
     )
     .sort(
       (a, b) =>
@@ -243,10 +227,7 @@ function topPlayers() {
 // GROQ
 // ==================================================
 
-async function groq(
-  input,
-  instructions
-) {
+async function groq(input, instructions) {
   const apiKey =
     process.env.GROQ_API_KEY;
 
@@ -279,7 +260,6 @@ async function groq(
             "openai/gpt-oss-20b",
 
           instructions,
-
           input
         })
       }
@@ -380,10 +360,7 @@ ANSWER:
 // EDUCATIONAL AI
 // ==================================================
 
-async function educationalAI(
-  type,
-  topic
-) {
+async function educationalAI(type, topic) {
   return groq(
     `النوع: ${type}
 
@@ -486,11 +463,7 @@ Infinitiv | Präteritum | Perfekt | المعنى
 // FIELD
 // ==================================================
 
-function field(
-  text,
-  key,
-  next = []
-) {
+function field(text, key, next = []) {
   const end = next.length
     ? `(?=\\n(?:${next.join("|")}):)`
     : "$";
@@ -500,8 +473,7 @@ function field(
     "i"
   );
 
-  const match =
-    text.match(regex);
+  const match = text.match(regex);
 
   return match
     ? match[1].trim()
@@ -577,9 +549,7 @@ function parseQuestion(text) {
     !data.option1 ||
     !data.option2 ||
     !data.option3 ||
-    !/^[123]$/.test(
-      data.answer
-    )
+    !/^[123]$/.test(data.answer)
   ) {
     return null;
   }
@@ -1452,10 +1422,6 @@ async function createGermanVoice(
     text,
     outputFile
   );
-
-  console.log(
-    "🎙️ Edge TTS: file created."
-  );
 }
 
 // ==================================================
@@ -1618,13 +1584,11 @@ async function startBot() {
 
     const sock =
       makeWASocket({
-        auth:
-          state,
+        auth: state,
 
         logger:
           pino({
-            level:
-              "silent"
+            level: "silent"
           }),
 
         browser:
@@ -1639,8 +1603,7 @@ async function startBot() {
           false
       });
 
-    globalSock =
-      sock;
+    globalSock = sock;
 
     sock.ev.on(
       "creds.update",
@@ -1702,8 +1665,7 @@ async function startBot() {
         if (
           connection === "close"
         ) {
-          globalSock =
-            null;
+          globalSock = null;
 
           let code = 0;
 
@@ -1712,8 +1674,7 @@ async function startBot() {
               lastDisconnect
                 ?.error
                 ?.output
-                ?.statusCode ||
-              0;
+                ?.statusCode || 0;
           } catch {}
 
           console.log(
@@ -1804,18 +1765,13 @@ async function startBot() {
         for (
           const msg of messages
         ) {
-
           try {
 
-            if (
-              !msg?.message
-            ) {
+            if (!msg?.message) {
               continue;
             }
 
-            if (
-              msg.key.fromMe
-            ) {
+            if (msg.key.fromMe) {
               continue;
             }
 
@@ -1827,9 +1783,7 @@ async function startBot() {
             }
 
             if (
-              !jid.endsWith(
-                "@g.us"
-              )
+              !jid.endsWith("@g.us")
             ) {
               console.log(
                 "🚫 Private message ignored."
@@ -1877,9 +1831,7 @@ async function startBot() {
 
             if (
               sender &&
-              /^[123]$/.test(
-                text
-              )
+              /^[123]$/.test(text)
             ) {
               const handled =
                 await handleTextAnswer(
@@ -1889,9 +1841,7 @@ async function startBot() {
                   text
                 );
 
-              if (
-                handled
-              ) {
+              if (handled) {
                 continue;
               }
             }
@@ -1944,7 +1894,6 @@ async function startBot() {
                   .trim();
 
               if (!voiceText) {
-
                 await sock.sendMessage(
                   jid,
                   {
@@ -1967,9 +1916,7 @@ async function startBot() {
                   voiceText
                 );
 
-              } catch (
-                error
-              ) {
+              } catch (error) {
 
                 console.log(
                   "❌ Voice error:",
@@ -1998,13 +1945,11 @@ async function startBot() {
             ) {
 
               if (sender) {
-
                 await sendMyPoints(
                   sock,
                   jid,
                   sender
                 );
-
               }
 
               continue;
@@ -2055,12 +2000,10 @@ async function startBot() {
                   jid
                 )
               ) {
-
                 await sendContent(
                   sock,
                   jid
                 );
-
               }
 
               continue;
@@ -2105,9 +2048,7 @@ ${answer}`
                   }
                 );
 
-              } catch (
-                error
-              ) {
+              } catch (error) {
 
                 console.log(
                   "❌ AI error:",
@@ -2131,15 +2072,12 @@ GROQ_API_KEY
               continue;
             }
 
-          } catch (
-            error
-          ) {
+          } catch (error) {
 
             console.log(
               "❌ Message error:",
               error.message
             );
-
           }
         }
       }
@@ -2149,19 +2087,14 @@ GROQ_API_KEY
     // AUTOMATIC CONTENT
     // ==================================================
 
-    if (
-      !intervalStarted
-    ) {
+    if (!intervalStarted) {
 
-      intervalStarted =
-        true;
+      intervalStarted = true;
 
       setInterval(
         async () => {
 
-          if (
-            !globalSock
-          ) {
+          if (!globalSock) {
             return;
           }
 
@@ -2177,15 +2110,12 @@ GROQ_API_KEY
                 group
               );
 
-            } catch (
-              error
-            ) {
+            } catch (error) {
 
               console.log(
                 "❌ Automatic content error:",
                 error.message
               );
-
             }
           }
 
@@ -2198,17 +2128,14 @@ GROQ_API_KEY
       );
     }
 
-  } catch (
-    error
-  ) {
+  } catch (error) {
 
     console.log(
       "❌ BOT START ERROR:",
       error.message
     );
 
-    globalSock =
-      null;
+    globalSock = null;
 
     console.log(
       "🔄 Restarting in 10 seconds..."
