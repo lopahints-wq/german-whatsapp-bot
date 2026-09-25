@@ -5,8 +5,6 @@ const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
 
-const { EdgeTTS } = require("node-edge-tts");
-
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -26,13 +24,9 @@ const ALLOWED_GROUPS = [
 ];
 
 const CONTENT_INTERVAL = 60 * 1000;
-
 const CORRECT_POINTS = 10;
 
-const POINTS_FILE = path.join(
-  __dirname,
-  "points.json"
-);
+const POINTS_FILE = path.join(__dirname, "points.json");
 
 // ==================================================
 // SERVER
@@ -54,7 +48,6 @@ app.listen(PORT, "0.0.0.0", () => {
 
 let globalSock = null;
 let intervalStarted = false;
-
 let points = {};
 
 const names = new Map();
@@ -77,7 +70,7 @@ function norm(jid) {
 }
 
 // ==================================================
-// LOAD POINTS
+// POINTS
 // ==================================================
 
 function loadPoints() {
@@ -85,10 +78,7 @@ function loadPoints() {
     if (fs.existsSync(POINTS_FILE)) {
       points =
         JSON.parse(
-          fs.readFileSync(
-            POINTS_FILE,
-            "utf8"
-          )
+          fs.readFileSync(POINTS_FILE, "utf8")
         ) || {};
     }
   } catch (error) {
@@ -101,28 +91,17 @@ function loadPoints() {
   }
 }
 
-// ==================================================
-// SAVE POINTS
-// ==================================================
-
 function savePoints() {
   try {
     const tmp = POINTS_FILE + ".tmp";
 
     fs.writeFileSync(
       tmp,
-      JSON.stringify(
-        points,
-        null,
-        2
-      ),
+      JSON.stringify(points, null, 2),
       "utf8"
     );
 
-    fs.renameSync(
-      tmp,
-      POINTS_FILE
-    );
+    fs.renameSync(tmp, POINTS_FILE);
   } catch (error) {
     console.log(
       "❌ Save points error:",
@@ -131,15 +110,9 @@ function savePoints() {
   }
 }
 
-// ==================================================
-// REMEMBER NAME
-// ==================================================
-
 function rememberName(jid, name) {
   const id = norm(jid);
-
-  const cleanName =
-    String(name || "").trim();
+  const cleanName = String(name || "").trim();
 
   if (!id || !cleanName) return;
 
@@ -155,10 +128,6 @@ function rememberName(jid, name) {
   }
 }
 
-// ==================================================
-// DISPLAY NAME
-// ==================================================
-
 function displayName(jid) {
   const id = norm(jid);
 
@@ -169,10 +138,6 @@ function displayName(jid) {
     "Player"
   );
 }
-
-// ==================================================
-// ADD POINTS
-// ==================================================
 
 function addPoints(jid, amount, name) {
   const id = norm(jid);
@@ -199,27 +164,15 @@ function addPoints(jid, amount, name) {
   return points[id].points;
 }
 
-// ==================================================
-// TOP PLAYERS
-// ==================================================
-
 function topPlayers() {
   return Object.entries(points)
     .map(([jid, data]) => ({
       jid,
-      name:
-        data.name ||
-        displayName(jid),
-      points:
-        Number(data.points || 0)
+      name: data.name || displayName(jid),
+      points: Number(data.points || 0)
     }))
-    .filter(
-      player => player.points > 0
-    )
-    .sort(
-      (a, b) =>
-        b.points - a.points
-    )
+    .filter(player => player.points > 0)
+    .sort((a, b) => b.points - a.points)
     .slice(0, 10);
 }
 
@@ -228,50 +181,31 @@ function topPlayers() {
 // ==================================================
 
 async function groq(input, instructions) {
-  const apiKey =
-    process.env.GROQ_API_KEY;
+  const apiKey = process.env.GROQ_API_KEY;
 
   if (!apiKey) {
-    throw new Error(
-      "GROQ_API_KEY is missing."
-    );
+    throw new Error("GROQ_API_KEY is missing.");
   }
 
-  console.log(
-    "🧠 Sending request to Groq..."
+  const response = await fetch(
+    "https://api.groq.com/openai/v1/responses",
+    {
+      method: "POST",
+
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+
+      body: JSON.stringify({
+        model: "openai/gpt-oss-20b",
+        instructions,
+        input
+      })
+    }
   );
 
-  const response =
-    await fetch(
-      "https://api.groq.com/openai/v1/responses",
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-
-          "Authorization":
-            `Bearer ${apiKey}`
-        },
-
-        body: JSON.stringify({
-          model:
-            "openai/gpt-oss-20b",
-
-          instructions,
-          input
-        })
-      }
-    );
-
-  const data =
-    await response.json();
-
-  console.log(
-    "📦 Groq status:",
-    response.status
-  );
+  const data = await response.json();
 
   if (!response.ok) {
     throw new Error(
@@ -281,8 +215,7 @@ async function groq(input, instructions) {
   }
 
   if (
-    typeof data.output_text ===
-      "string" &&
+    typeof data.output_text === "string" &&
     data.output_text.trim()
   ) {
     return data.output_text.trim();
@@ -290,19 +223,11 @@ async function groq(input, instructions) {
 
   let output = "";
 
-  for (
-    const item of
-    data.output || []
-  ) {
-    for (
-      const content of
-      item.content || []
-    ) {
+  for (const item of data.output || []) {
+    for (const content of item.content || []) {
       if (
-        content.type ===
-          "output_text" &&
-        typeof content.text ===
-          "string"
+        content.type === "output_text" &&
+        typeof content.text === "string"
       ) {
         output += content.text;
       }
@@ -325,7 +250,6 @@ async function groq(input, instructions) {
 async function chatAI(question) {
   return groq(
     question,
-
     `
 أنت مدرس لغة ألمانية B1 ومساعد ذكي.
 
@@ -460,7 +384,7 @@ Infinitiv | Präteritum | Perfekt | المعنى
 }
 
 // ==================================================
-// FIELD
+// PARSER
 // ==================================================
 
 function field(text, key, next = []) {
@@ -475,71 +399,18 @@ function field(text, key, next = []) {
 
   const match = text.match(regex);
 
-  return match
-    ? match[1].trim()
-    : "";
+  return match ? match[1].trim() : "";
 }
-
-// ==================================================
-// PARSE QUESTION
-// ==================================================
 
 function parseQuestion(text) {
   const data = {
-    type:
-      field(
-        text,
-        "TYPE",
-        ["TITLE", "CONTENT"]
-      ),
-
-    title:
-      field(
-        text,
-        "TITLE",
-        ["CONTENT"]
-      ),
-
-    content:
-      field(
-        text,
-        "CONTENT",
-        ["QUESTION"]
-      ),
-
-    question:
-      field(
-        text,
-        "QUESTION",
-        ["OPTION1"]
-      ),
-
-    option1:
-      field(
-        text,
-        "OPTION1",
-        ["OPTION2"]
-      ),
-
-    option2:
-      field(
-        text,
-        "OPTION2",
-        ["OPTION3"]
-      ),
-
-    option3:
-      field(
-        text,
-        "OPTION3",
-        ["ANSWER"]
-      ),
-
-    answer:
-      field(
-        text,
-        "ANSWER"
-      )
+    title: field(text, "TITLE", ["CONTENT"]),
+    content: field(text, "CONTENT", ["QUESTION"]),
+    question: field(text, "QUESTION", ["OPTION1"]),
+    option1: field(text, "OPTION1", ["OPTION2"]),
+    option2: field(text, "OPTION2", ["OPTION3"]),
+    option3: field(text, "OPTION3", ["ANSWER"]),
+    answer: field(text, "ANSWER")
   };
 
   if (
@@ -554,44 +425,20 @@ function parseQuestion(text) {
     return null;
   }
 
-  data.answer =
-    Number(data.answer);
+  data.answer = Number(data.answer);
 
   return data;
 }
 
-// ==================================================
-// PARSE WORD
-// ==================================================
-
 function parseWord(text) {
   const data = {
-    word:
-      field(
-        text,
-        "WORD",
-        ["TRANSLATION"]
-      ),
-
+    word: field(text, "WORD", ["TRANSLATION"]),
     translation:
-      field(
-        text,
-        "TRANSLATION",
-        ["EXAMPLE"]
-      ),
-
+      field(text, "TRANSLATION", ["EXAMPLE"]),
     example:
-      field(
-        text,
-        "EXAMPLE",
-        ["EXAMPLE_TRANSLATION"]
-      ),
-
+      field(text, "EXAMPLE", ["EXAMPLE_TRANSLATION"]),
     exampleTranslation:
-      field(
-        text,
-        "EXAMPLE_TRANSLATION"
-      )
+      field(text, "EXAMPLE_TRANSLATION")
   };
 
   if (
@@ -606,38 +453,19 @@ function parseWord(text) {
   return data;
 }
 
-// ==================================================
-// PARSE GRAMMAR
-// ==================================================
-
 function parseGrammar(text) {
   const data = {
     title:
-      field(
-        text,
-        "TITLE",
-        ["EXPLANATION"]
-      ),
+      field(text, "TITLE", ["EXPLANATION"]),
 
     explanation:
-      field(
-        text,
-        "EXPLANATION",
-        ["EXAMPLE"]
-      ),
+      field(text, "EXPLANATION", ["EXAMPLE"]),
 
     example:
-      field(
-        text,
-        "EXAMPLE",
-        ["TRANSLATION"]
-      ),
+      field(text, "EXAMPLE", ["TRANSLATION"]),
 
     translation:
-      field(
-        text,
-        "TRANSLATION"
-      )
+      field(text, "TRANSLATION")
   };
 
   if (
@@ -652,26 +480,15 @@ function parseGrammar(text) {
   return data;
 }
 
-// ==================================================
-// PARSE VERBS
-// ==================================================
-
 function parseVerbs(text) {
   const verbs = [];
 
-  for (
-    let i = 1;
-    i <= 5;
-    i++
-  ) {
-    const value =
-      field(
-        text,
-        `VERB${i}`,
-        i < 5
-          ? [`VERB${i + 1}`]
-          : []
-      );
+  for (let i = 1; i <= 5; i++) {
+    const value = field(
+      text,
+      `VERB${i}`,
+      i < 5 ? [`VERB${i + 1}`] : []
+    );
 
     if (value) {
       verbs.push(value);
@@ -725,18 +542,14 @@ const TOPICS = [
 
 function getRandomTopic() {
   return TOPICS[
-    Math.floor(
-      Math.random() *
-      TOPICS.length
-    )
+    Math.floor(Math.random() * TOPICS.length)
   ];
 }
 
 function getNextType() {
   const type =
     CONTENT_TYPES[
-      contentIndex %
-      CONTENT_TYPES.length
+      contentIndex % CONTENT_TYPES.length
     ];
 
   contentIndex++;
@@ -744,26 +557,12 @@ function getNextType() {
   return type;
 }
 
-// ==================================================
-// GENERATE CONTENT
-// ==================================================
-
 async function generateContent() {
-  const type =
-    getNextType();
+  const type = getNextType();
+  const topic = getRandomTopic();
 
-  const topic =
-    getRandomTopic();
-
-  console.log(
-    "🎯 Type:",
-    type
-  );
-
-  console.log(
-    "📚 Topic:",
-    topic
-  );
+  console.log("🎯 Type:", type);
+  console.log("📚 Topic:", topic);
 
   const text =
     await educationalAI(
@@ -820,21 +619,18 @@ ${parsed.content}
 ✍️ اكتب رقم الإجابة:
 *1 أو 2 أو 3*`;
 
-  const sent =
-    await sock.sendMessage(
-      jid,
-      {
-        text: message
-      }
-    );
+  await sock.sendMessage(
+    jid,
+    {
+      text: message
+    }
+  );
 
   textQuestions.set(
     jid,
     {
       questionId,
-
-      answer:
-        parsed.answer,
+      answer: parsed.answer,
 
       options: [
         parsed.option1,
@@ -842,21 +638,15 @@ ${parsed.content}
         parsed.option3
       ],
 
-      title:
-        parsed.title,
+      title: parsed.title,
+      question: parsed.question,
 
-      question:
-        parsed.question,
-
-      answered:
-        new Set(),
-
-      message: sent
+      answered: new Set()
     }
   );
 
   console.log(
-    "📝 Text question saved:",
+    "📝 Question saved:",
     questionId
   );
 }
@@ -1096,7 +886,7 @@ function getMessageText(msg) {
 }
 
 // ==================================================
-// FIND NAME
+// FIND USER NAME
 // ==================================================
 
 async function findUserName(
@@ -1267,7 +1057,7 @@ ${question.answer}️⃣ ${correct}`
 }
 
 // ==================================================
-// MY POINTS
+// POINTS COMMANDS
 // ==================================================
 
 async function sendMyPoints(
@@ -1275,7 +1065,8 @@ async function sendMyPoints(
   jid,
   sender
 ) {
-  const id = norm(sender);
+  const id =
+    norm(sender);
 
   const total =
     Number(
@@ -1297,10 +1088,6 @@ async function sendMyPoints(
     }
   );
 }
-
-// ==================================================
-// TOP
-// ==================================================
 
 async function sendTopPlayers(
   sock,
@@ -1383,7 +1170,7 @@ $سؤالك
 }
 
 // ==================================================
-// GERMAN VOICE
+// ELEVENLABS TTS
 // ==================================================
 
 async function createGermanVoice(
@@ -1391,36 +1178,83 @@ async function createGermanVoice(
   outputFile
 ) {
   console.log(
-    "🎙️ Edge TTS: generating..."
+    "🎙️ ElevenLabs: generating..."
   );
 
-  const tts =
-    new EdgeTTS({
-      voice:
-        "de-DE-ConradNeural",
+  const apiKey =
+    process.env.ELEVENLABS_API_KEY;
 
-      lang:
-        "de-DE",
+  if (!apiKey) {
+    throw new Error(
+      "ELEVENLABS_API_KEY is missing."
+    );
+  }
 
-      outputFormat:
-        "audio-24khz-48kbitrate-mono-mp3",
+  const voiceId =
+    process.env.ELEVENLABS_VOICE_ID ||
+    "JBFqnCBsd6RMkjVDRZzb";
 
-      rate:
-        "default",
+  const response =
+    await fetch(
+      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`,
+      {
+        method: "POST",
 
-      pitch:
-        "default",
+        headers: {
+          "xi-api-key":
+            apiKey,
 
-      volume:
-        "default",
+          "Content-Type":
+            "application/json",
 
-      timeout:
-        30000
-    });
+          "Accept":
+            "audio/mpeg"
+        },
 
-  await tts.ttsPromise(
-    text,
-    outputFile
+        body:
+          JSON.stringify({
+            text,
+
+            model_id:
+              "eleven_multilingual_v2",
+
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.75
+            }
+          })
+      }
+    );
+
+  if (!response.ok) {
+    const errorText =
+      await response.text();
+
+    throw new Error(
+      `ElevenLabs ${response.status}: ${errorText}`
+    );
+  }
+
+  const audioBuffer =
+    Buffer.from(
+      await response.arrayBuffer()
+    );
+
+  if (
+    audioBuffer.length < 1000
+  ) {
+    throw new Error(
+      "Generated audio is too small."
+    );
+  }
+
+  fs.writeFileSync(
+    outputFile,
+    audioBuffer
+  );
+
+  console.log(
+    `🎙️ Voice created: ${audioBuffer.length} bytes`
   );
 }
 
@@ -1495,10 +1329,6 @@ async function sendVoice(
           );
         }
 
-        console.log(
-          `🎙️ Voice created: ${stat.size} bytes`
-        );
-
         await sock.sendMessage(
           jid,
           {
@@ -1519,7 +1349,6 @@ async function sendVoice(
         );
 
         return;
-
       } catch (error) {
         lastError = error;
 
@@ -1548,7 +1377,6 @@ async function sendVoice(
         "Voice generation failed."
       )
     );
-
   } finally {
     try {
       if (
@@ -1603,7 +1431,8 @@ async function startBot() {
           false
       });
 
-    globalSock = sock;
+    globalSock =
+      sock;
 
     sock.ev.on(
       "creds.update",
@@ -1650,7 +1479,7 @@ async function startBot() {
           );
 
           console.log(
-            "🎙️ German voice ready"
+            "🎙️ ElevenLabs voice ready"
           );
 
           console.log(
@@ -1665,7 +1494,8 @@ async function startBot() {
         if (
           connection === "close"
         ) {
-          globalSock = null;
+          globalSock =
+            null;
 
           let code = 0;
 
@@ -1745,7 +1575,9 @@ async function startBot() {
         "📱 WHATSAPP PAIRING CODE:"
       );
 
-      console.log(code);
+      console.log(
+        code
+      );
 
       console.log(
         "======================================"
@@ -1761,17 +1593,19 @@ async function startBot() {
       async ({
         messages
       }) => {
-
         for (
           const msg of messages
         ) {
           try {
-
-            if (!msg?.message) {
+            if (
+              !msg?.message
+            ) {
               continue;
             }
 
-            if (msg.key.fromMe) {
+            if (
+              msg.key.fromMe
+            ) {
               continue;
             }
 
@@ -1783,12 +1617,10 @@ async function startBot() {
             }
 
             if (
-              !jid.endsWith("@g.us")
+              !jid.endsWith(
+                "@g.us"
+              )
             ) {
-              console.log(
-                "🚫 Private message ignored."
-              );
-
               continue;
             }
 
@@ -1831,7 +1663,9 @@ async function startBot() {
 
             if (
               sender &&
-              /^[123]$/.test(text)
+              /^[123]$/.test(
+                text
+              )
             ) {
               const handled =
                 await handleTextAnswer(
@@ -1841,7 +1675,9 @@ async function startBot() {
                   text
                 );
 
-              if (handled) {
+              if (
+                handled
+              ) {
                 continue;
               }
             }
@@ -1851,7 +1687,8 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!test"
+              lower ===
+              "!test"
             ) {
               await sock.sendMessage(
                 jid,
@@ -1869,7 +1706,7 @@ async function startBot() {
 
 📝 Questions تعمل
 
-🎙️ Voice يعمل
+🎙️ ElevenLabs Voice يعمل
 
 🏆 !top يعمل`
                 }
@@ -1887,13 +1724,14 @@ async function startBot() {
                 "!voice"
               )
             ) {
-
               const voiceText =
                 text
                   .slice(6)
                   .trim();
 
-              if (!voiceText) {
+              if (
+                !voiceText
+              ) {
                 await sock.sendMessage(
                   jid,
                   {
@@ -1909,15 +1747,14 @@ async function startBot() {
               }
 
               try {
-
                 await sendVoice(
                   sock,
                   jid,
                   voiceText
                 );
-
-              } catch (error) {
-
+              } catch (
+                error
+              ) {
                 console.log(
                   "❌ Voice error:",
                   error.message
@@ -1940,11 +1777,14 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!point" ||
-              lower === "!points"
+              lower ===
+                "!point" ||
+              lower ===
+                "!points"
             ) {
-
-              if (sender) {
+              if (
+                sender
+              ) {
                 await sendMyPoints(
                   sock,
                   jid,
@@ -1960,9 +1800,9 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!top"
+              lower ===
+              "!top"
             ) {
-
               await sendTopPlayers(
                 sock,
                 jid
@@ -1976,9 +1816,9 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!help"
+              lower ===
+              "!help"
             ) {
-
               await sendHelp(
                 sock,
                 jid
@@ -1992,9 +1832,9 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!now"
+              lower ===
+              "!now"
             ) {
-
               if (
                 ALLOWED_GROUPS.includes(
                   jid
@@ -2014,20 +1854,22 @@ async function startBot() {
             // ==================================================
 
             if (
-              text.startsWith("$")
+              text.startsWith(
+                "$"
+              )
             ) {
-
               const question =
                 text
                   .slice(1)
                   .trim();
 
-              if (!question) {
+              if (
+                !question
+              ) {
                 continue;
               }
 
               try {
-
                 console.log(
                   "🤖 AI CHAT:",
                   question
@@ -2047,9 +1889,9 @@ async function startBot() {
 ${answer}`
                   }
                 );
-
-              } catch (error) {
-
+              } catch (
+                error
+              ) {
                 console.log(
                   "❌ AI error:",
                   error.message
@@ -2072,8 +1914,9 @@ GROQ_API_KEY
               continue;
             }
 
-          } catch (error) {
-
+          } catch (
+            error
+          ) {
             console.log(
               "❌ Message error:",
               error.message
@@ -2087,14 +1930,16 @@ GROQ_API_KEY
     // AUTOMATIC CONTENT
     // ==================================================
 
-    if (!intervalStarted) {
-
+    if (
+      !intervalStarted
+    ) {
       intervalStarted = true;
 
       setInterval(
         async () => {
-
-          if (!globalSock) {
+          if (
+            !globalSock
+          ) {
             return;
           }
 
@@ -2102,23 +1947,20 @@ GROQ_API_KEY
             const group of
             ALLOWED_GROUPS
           ) {
-
             try {
-
               await sendContent(
                 globalSock,
                 group
               );
-
-            } catch (error) {
-
+            } catch (
+              error
+            ) {
               console.log(
                 "❌ Automatic content error:",
                 error.message
               );
             }
           }
-
         },
         CONTENT_INTERVAL
       );
@@ -2128,14 +1970,16 @@ GROQ_API_KEY
       );
     }
 
-  } catch (error) {
-
+  } catch (
+    error
+  ) {
     console.log(
       "❌ BOT START ERROR:",
       error.message
     );
 
-    globalSock = null;
+    globalSock =
+      null;
 
     console.log(
       "🔄 Restarting in 10 seconds..."
