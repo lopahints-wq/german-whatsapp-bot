@@ -1,12 +1,11 @@
 require("dotenv").config();
+
 const express = require("express");
 const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
 
-const {
-  ttsSave
-} = require("edge-tts");
+const { EdgeTTS } = require("node-edge-tts");
 
 const {
   default: makeWASocket,
@@ -1425,12 +1424,16 @@ async function createGermanVoice(
     "🎙️ Edge TTS: generating..."
   );
 
-  await ttsSave(
-    text,
-    outputFile,
-    {
+  const tts =
+    new EdgeTTS({
       voice:
         "de-DE-ConradNeural",
+
+      lang:
+        "de-DE",
+
+      outputFormat:
+        "audio-24khz-48kbitrate-mono-mp3",
 
       rate:
         "default",
@@ -1439,13 +1442,24 @@ async function createGermanVoice(
         "default",
 
       volume:
-        "default"
-    }
+        "default",
+
+      timeout:
+        30000
+    });
+
+  await tts.ttsPromise(
+    text,
+    outputFile
+  );
+
+  console.log(
+    "🎙️ Edge TTS: file created."
   );
 }
 
 // ==================================================
-// SEND VOICE WITH RETRY
+// SEND VOICE
 // ==================================================
 
 async function sendVoice(
@@ -1539,6 +1553,7 @@ async function sendVoice(
         );
 
         return;
+
       } catch (error) {
         lastError = error;
 
@@ -1547,7 +1562,9 @@ async function sendVoice(
           error.message
         );
 
-        if (attempt < 3) {
+        if (
+          attempt < 3
+        ) {
           await new Promise(
             resolve =>
               setTimeout(
@@ -1559,10 +1576,12 @@ async function sendVoice(
       }
     }
 
-    throw lastError ||
+    throw (
+      lastError ||
       new Error(
         "Voice generation failed."
-      );
+      )
+    );
 
   } finally {
     try {
@@ -1599,11 +1618,13 @@ async function startBot() {
 
     const sock =
       makeWASocket({
-        auth: state,
+        auth:
+          state,
 
         logger:
           pino({
-            level: "silent"
+            level:
+              "silent"
           }),
 
         browser:
@@ -1618,7 +1639,8 @@ async function startBot() {
           false
       });
 
-    globalSock = sock;
+    globalSock =
+      sock;
 
     sock.ev.on(
       "creds.update",
@@ -1680,7 +1702,8 @@ async function startBot() {
         if (
           connection === "close"
         ) {
-          globalSock = null;
+          globalSock =
+            null;
 
           let code = 0;
 
@@ -1689,7 +1712,8 @@ async function startBot() {
               lastDisconnect
                 ?.error
                 ?.output
-                ?.statusCode || 0;
+                ?.statusCode ||
+              0;
           } catch {}
 
           console.log(
@@ -1776,15 +1800,22 @@ async function startBot() {
       async ({
         messages
       }) => {
+
         for (
           const msg of messages
         ) {
+
           try {
-            if (!msg?.message) {
+
+            if (
+              !msg?.message
+            ) {
               continue;
             }
 
-            if (msg.key.fromMe) {
+            if (
+              msg.key.fromMe
+            ) {
               continue;
             }
 
@@ -1796,7 +1827,9 @@ async function startBot() {
             }
 
             if (
-              !jid.endsWith("@g.us")
+              !jid.endsWith(
+                "@g.us"
+              )
             ) {
               console.log(
                 "🚫 Private message ignored."
@@ -1844,7 +1877,9 @@ async function startBot() {
 
             if (
               sender &&
-              /^[123]$/.test(text)
+              /^[123]$/.test(
+                text
+              )
             ) {
               const handled =
                 await handleTextAnswer(
@@ -1854,7 +1889,9 @@ async function startBot() {
                   text
                 );
 
-              if (handled) {
+              if (
+                handled
+              ) {
                 continue;
               }
             }
@@ -1900,12 +1937,14 @@ async function startBot() {
                 "!voice"
               )
             ) {
+
               const voiceText =
                 text
                   .slice(6)
                   .trim();
 
               if (!voiceText) {
+
                 await sock.sendMessage(
                   jid,
                   {
@@ -1921,12 +1960,17 @@ async function startBot() {
               }
 
               try {
+
                 await sendVoice(
                   sock,
                   jid,
                   voiceText
                 );
-              } catch (error) {
+
+              } catch (
+                error
+              ) {
+
                 console.log(
                   "❌ Voice error:",
                   error.message
@@ -1952,12 +1996,15 @@ async function startBot() {
               lower === "!point" ||
               lower === "!points"
             ) {
+
               if (sender) {
+
                 await sendMyPoints(
                   sock,
                   jid,
                   sender
                 );
+
               }
 
               continue;
@@ -1970,6 +2017,7 @@ async function startBot() {
             if (
               lower === "!top"
             ) {
+
               await sendTopPlayers(
                 sock,
                 jid
@@ -1985,6 +2033,7 @@ async function startBot() {
             if (
               lower === "!help"
             ) {
+
               await sendHelp(
                 sock,
                 jid
@@ -2000,15 +2049,18 @@ async function startBot() {
             if (
               lower === "!now"
             ) {
+
               if (
                 ALLOWED_GROUPS.includes(
                   jid
                 )
               ) {
+
                 await sendContent(
                   sock,
                   jid
                 );
+
               }
 
               continue;
@@ -2021,6 +2073,7 @@ async function startBot() {
             if (
               text.startsWith("$")
             ) {
+
               const question =
                 text
                   .slice(1)
@@ -2031,6 +2084,7 @@ async function startBot() {
               }
 
               try {
+
                 console.log(
                   "🤖 AI CHAT:",
                   question
@@ -2050,7 +2104,11 @@ async function startBot() {
 ${answer}`
                   }
                 );
-              } catch (error) {
+
+              } catch (
+                error
+              ) {
+
                 console.log(
                   "❌ AI error:",
                   error.message
@@ -2073,11 +2131,15 @@ GROQ_API_KEY
               continue;
             }
 
-          } catch (error) {
+          } catch (
+            error
+          ) {
+
             console.log(
               "❌ Message error:",
               error.message
             );
+
           }
         }
       }
@@ -2087,12 +2149,19 @@ GROQ_API_KEY
     // AUTOMATIC CONTENT
     // ==================================================
 
-    if (!intervalStarted) {
-      intervalStarted = true;
+    if (
+      !intervalStarted
+    ) {
+
+      intervalStarted =
+        true;
 
       setInterval(
         async () => {
-          if (!globalSock) {
+
+          if (
+            !globalSock
+          ) {
             return;
           }
 
@@ -2100,18 +2169,26 @@ GROQ_API_KEY
             const group of
             ALLOWED_GROUPS
           ) {
+
             try {
+
               await sendContent(
                 globalSock,
                 group
               );
-            } catch (error) {
+
+            } catch (
+              error
+            ) {
+
               console.log(
                 "❌ Automatic content error:",
                 error.message
               );
+
             }
           }
+
         },
         CONTENT_INTERVAL
       );
@@ -2121,13 +2198,17 @@ GROQ_API_KEY
       );
     }
 
-  } catch (error) {
+  } catch (
+    error
+  ) {
+
     console.log(
       "❌ BOT START ERROR:",
       error.message
     );
 
-    globalSock = null;
+    globalSock =
+      null;
 
     console.log(
       "🔄 Restarting in 10 seconds..."
