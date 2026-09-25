@@ -27,7 +27,8 @@ const PORT = Number(
 );
 
 const ALLOWED_GROUPS = [
-  "120363429927673856@g.us"
+  "120363429927673856@g.us",
+  "120363410722950290@g.us"
 ];
 
 const CONTENT_INTERVAL =
