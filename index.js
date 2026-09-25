@@ -18,7 +18,7 @@ const PORT = Number(
 );
 
 const ALLOWED_GROUPS = [
-  "120363410722950290@g.us"
+  "120363429927673856@g.us"
 ];
 
 const CONTENT_INTERVAL =
@@ -37,22 +37,18 @@ const POINTS_FILE =
 const app = express();
 
 app.get("/", (req, res) => {
-
   res.send(
     "🇩🇪 German B1 AI Bot is running!"
   );
-
 });
 
 app.listen(
   PORT,
   "0.0.0.0",
   () => {
-
     console.log(
       `🌐 Server started on ${PORT}`
     );
-
   }
 );
 
@@ -65,23 +61,6 @@ let intervalStarted = false;
 let points = {};
 
 const names = new Map();
-
-// ==================================================
-// TEXT QUESTIONS
-// ==================================================
-
-// حفظ الأسئلة النصية الحالية
-// key = groupJid
-//
-// مثال:
-// {
-//   "120...@g.us": {
-//      answer: 1,
-//      options: [...],
-//      questionId: "...",
-//      answered: Set()
-//   }
-// }
 
 const textQuestions =
   new Map();
@@ -1114,15 +1093,10 @@ ${parsed.content}
     await sock.sendMessage(
       jid,
       {
-
         text:
           message
-
       }
     );
-
-  // السؤال الجديد يلغي السؤال القديم
-  // لنفس المجموعة
 
   textQuestions.set(
     jid,
@@ -1586,7 +1560,6 @@ async function handleTextAnswer(
 
   }
 
-  // نقبل فقط 1 أو 2 أو 3
   if (
     !/^[123]$/.test(
       text
@@ -1608,9 +1581,6 @@ async function handleTextAnswer(
     return false;
 
   }
-
-  // منع الشخص من الحصول على نقاط
-  // أكثر من مرة لنفس السؤال
 
   if (
     question.answered.has(
@@ -1939,6 +1909,10 @@ async function startBot() {
           );
 
           console.log(
+            "👥 Group: 120363429927673856@g.us"
+          );
+
+          console.log(
             "======================================"
           );
 
@@ -2100,7 +2074,6 @@ async function startBot() {
 
             }
 
-            // المجموعة فقط
             if (
               !jid.endsWith(
                 "@g.us"
