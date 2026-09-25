@@ -3,6 +3,9 @@ const pino = require("pino");
 const fs = require("fs");
 const path = require("path");
 
+const { EdgeTTS } =
+  require("node-edge-tts");
+
 const {
   default: makeWASocket,
   useMultiFileAuthState,
@@ -28,10 +31,10 @@ const CONTENT_INTERVAL =
 const CORRECT_POINTS = 10;
 
 const POINTS_FILE =
-  path.join(__dirname, "points.json");
-
-const STATS_FILE =
-  path.join(__dirname, "stats.json");
+  path.join(
+    __dirname,
+    "points.json"
+  );
 
 // ==================================================
 // SERVER
@@ -69,11 +72,10 @@ let intervalStarted = false;
 
 let points = {};
 
-let playerStats = {};
-
 const names = new Map();
 
-const textQuestions = new Map();
+const textQuestions =
+  new Map();
 
 let contentIndex = 0;
 
@@ -84,14 +86,14 @@ let contentIndex = 0;
 function norm(jid) {
 
   if (!jid) {
-
     return "";
-
   }
 
   try {
 
-    return jidNormalizedUser(jid);
+    return jidNormalizedUser(
+      jid
+    );
 
   } catch {
 
@@ -110,7 +112,9 @@ function loadPoints() {
   try {
 
     if (
-      fs.existsSync(POINTS_FILE)
+      fs.existsSync(
+        POINTS_FILE
+      )
     ) {
 
       points =
@@ -145,7 +149,8 @@ function savePoints() {
   try {
 
     const tmp =
-      POINTS_FILE + ".tmp";
+      POINTS_FILE +
+      ".tmp";
 
     fs.writeFileSync(
       tmp,
@@ -174,78 +179,6 @@ function savePoints() {
 }
 
 // ==================================================
-// LOAD STATS
-// ==================================================
-
-function loadStats() {
-
-  try {
-
-    if (
-      fs.existsSync(STATS_FILE)
-    ) {
-
-      playerStats =
-        JSON.parse(
-          fs.readFileSync(
-            STATS_FILE,
-            "utf8"
-          )
-        ) || {};
-
-    }
-
-  } catch (error) {
-
-    console.log(
-      "⚠️ stats.json error:",
-      error.message
-    );
-
-    playerStats = {};
-
-  }
-
-}
-
-// ==================================================
-// SAVE STATS
-// ==================================================
-
-function saveStats() {
-
-  try {
-
-    const tmp =
-      STATS_FILE + ".tmp";
-
-    fs.writeFileSync(
-      tmp,
-      JSON.stringify(
-        playerStats,
-        null,
-        2
-      ),
-      "utf8"
-    );
-
-    fs.renameSync(
-      tmp,
-      STATS_FILE
-    );
-
-  } catch (error) {
-
-    console.log(
-      "❌ Save stats error:",
-      error.message
-    );
-
-  }
-
-}
-
-// ==================================================
 // REMEMBER NAME
 // ==================================================
 
@@ -258,7 +191,9 @@ function rememberName(
     norm(jid);
 
   const cleanName =
-    String(name || "").trim();
+    String(
+      name || ""
+    ).trim();
 
   if (
     !id ||
@@ -278,9 +213,11 @@ function rememberName(
 
     points[id] = {
 
-      name: cleanName,
+      name:
+        cleanName,
 
-      points: 0
+      points:
+        0
 
     };
 
@@ -312,118 +249,6 @@ function displayName(jid) {
 }
 
 // ==================================================
-// ENSURE STATS
-// ==================================================
-
-function ensureStats(jid) {
-
-  const id =
-    norm(jid);
-
-  if (!id) {
-
-    return null;
-
-  }
-
-  if (!playerStats[id]) {
-
-    playerStats[id] = {
-
-      questions: 0,
-
-      correct: 0,
-
-      wrong: 0,
-
-      streak: 0,
-
-      bestStreak: 0
-
-    };
-
-  }
-
-  return playerStats[id];
-
-}
-
-// ==================================================
-// RECORD ANSWER
-// ==================================================
-
-function recordAnswer(
-  jid,
-  correct
-) {
-
-  const stats =
-    ensureStats(jid);
-
-  if (!stats) {
-
-    return;
-
-  }
-
-  stats.questions++;
-
-  if (correct) {
-
-    stats.correct++;
-
-    stats.streak++;
-
-    if (
-      stats.streak >
-      stats.bestStreak
-    ) {
-
-      stats.bestStreak =
-        stats.streak;
-
-    }
-
-  } else {
-
-    stats.wrong++;
-
-    stats.streak = 0;
-
-  }
-
-  saveStats();
-
-}
-
-// ==================================================
-// ACCURACY
-// ==================================================
-
-function getAccuracy(jid) {
-
-  const stats =
-    ensureStats(jid);
-
-  if (
-    !stats ||
-    !stats.questions
-  ) {
-
-    return 0;
-
-  }
-
-  return Math.round(
-    (
-      stats.correct /
-      stats.questions
-    ) * 100
-  );
-
-}
-
-// ==================================================
 // ADD POINTS
 // ==================================================
 
@@ -450,7 +275,8 @@ function addPoints(
         name ||
         displayName(id),
 
-      points: 0
+      points:
+        0
 
     };
 
@@ -523,54 +349,6 @@ function topPlayers() {
 }
 
 // ==================================================
-// SECRET RESULT CODE
-// ==================================================
-
-const SECRET_ALPHABET =
-  "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-
-function randomSecret(
-  length = 8
-) {
-
-  let result = "";
-
-  for (
-    let i = 0;
-    i < length;
-    i++
-  ) {
-
-    result +=
-      SECRET_ALPHABET[
-        Math.floor(
-          Math.random() *
-          SECRET_ALPHABET.length
-        )
-      ];
-
-  }
-
-  return result;
-
-}
-
-function createSecretResult(
-  correct
-) {
-
-  return {
-
-    code:
-      randomSecret(8),
-
-    correct
-
-  };
-
-}
-
-// ==================================================
 // GROQ
 // ==================================================
 
@@ -599,7 +377,8 @@ async function groq(
       "https://api.groq.com/openai/v1/responses",
       {
 
-        method: "POST",
+        method:
+          "POST",
 
         headers: {
 
@@ -1144,7 +923,9 @@ function parseVerbs(
 
     if (value) {
 
-      verbs.push(value);
+      verbs.push(
+        value
+      );
 
     }
 
@@ -1161,13 +942,11 @@ function parseVerbs(
 // ==================================================
 
 const CONTENT_TYPES = [
-
   "dialogue",
   "word",
   "grammar",
   "verbs",
   "situation"
-
 ];
 
 const TOPICS = [
@@ -1282,7 +1061,9 @@ async function sendQuestion(
 ) {
 
   const parsed =
-    parseQuestion(text);
+    parseQuestion(
+      text
+    );
 
   if (!parsed) {
 
@@ -1290,7 +1071,9 @@ async function sendQuestion(
       "❌ Invalid question generated:"
     );
 
-    console.log(text);
+    console.log(
+      text
+    );
 
     return;
 
@@ -1322,7 +1105,8 @@ ${parsed.content}
     await sock.sendMessage(
       jid,
       {
-        text: message
+        text:
+          message
       }
     );
 
@@ -1338,7 +1122,9 @@ ${parsed.content}
       options: [
 
         parsed.option1,
+
         parsed.option2,
+
         parsed.option3
 
       ],
@@ -1376,7 +1162,9 @@ async function sendWord(
 ) {
 
   const parsed =
-    parseWord(text);
+    parseWord(
+      text
+    );
 
   if (!parsed) {
 
@@ -1420,7 +1208,9 @@ async function sendGrammar(
 ) {
 
   const parsed =
-    parseGrammar(text);
+    parseGrammar(
+      text
+    );
 
   if (!parsed) {
 
@@ -1464,7 +1254,9 @@ async function sendVerbs(
 ) {
 
   const verbs =
-    parseVerbs(text);
+    parseVerbs(
+      text
+    );
 
   if (!verbs) {
 
@@ -1493,7 +1285,8 @@ async function sendVerbs(
     jid,
     {
 
-      text: message
+      text:
+        message
 
     }
   );
@@ -1510,7 +1303,9 @@ async function sendContent(
 ) {
 
   if (
-    !ALLOWED_GROUPS.includes(jid)
+    !ALLOWED_GROUPS.includes(
+      jid
+    )
   ) {
 
     return;
@@ -1523,8 +1318,10 @@ async function sendContent(
       await generateContent();
 
     if (
-      data.type === "dialogue" ||
-      data.type === "situation"
+      data.type ===
+        "dialogue" ||
+      data.type ===
+        "situation"
     ) {
 
       await sendQuestion(
@@ -1536,7 +1333,8 @@ async function sendContent(
     }
 
     else if (
-      data.type === "word"
+      data.type ===
+      "word"
     ) {
 
       await sendWord(
@@ -1548,7 +1346,8 @@ async function sendContent(
     }
 
     else if (
-      data.type === "grammar"
+      data.type ===
+      "grammar"
     ) {
 
       await sendGrammar(
@@ -1560,7 +1359,8 @@ async function sendContent(
     }
 
     else if (
-      data.type === "verbs"
+      data.type ===
+      "verbs"
     ) {
 
       await sendVerbs(
@@ -1594,7 +1394,9 @@ function getMessageText(
     msg.message?.conversation
   ) {
 
-    return msg.message.conversation;
+    return (
+      msg.message.conversation
+    );
 
   }
 
@@ -1604,9 +1406,11 @@ function getMessageText(
       ?.text
   ) {
 
-    return msg.message
-      .extendedTextMessage
-      .text;
+    return (
+      msg.message
+        .extendedTextMessage
+        .text
+    );
 
   }
 
@@ -1617,10 +1421,12 @@ function getMessageText(
       ?.conversation
   ) {
 
-    return msg.message
-      .ephemeralMessage
-      .message
-      .conversation;
+    return (
+      msg.message
+        .ephemeralMessage
+        .message
+        .conversation
+    );
 
   }
 
@@ -1632,11 +1438,13 @@ function getMessageText(
       ?.text
   ) {
 
-    return msg.message
-      .ephemeralMessage
-      .message
-      .extendedTextMessage
-      .text;
+    return (
+      msg.message
+        .ephemeralMessage
+        .message
+        .extendedTextMessage
+        .text
+    );
 
   }
 
@@ -1657,13 +1465,17 @@ async function findUserName(
   const id =
     norm(userJid);
 
-  if (names.has(id)) {
+  if (
+    names.has(id)
+  ) {
 
     return names.get(id);
 
   }
 
-  if (points[id]?.name) {
+  if (
+    points[id]?.name
+  ) {
 
     return points[id].name;
 
@@ -1689,9 +1501,12 @@ async function findUserName(
           ]
 
             .filter(Boolean)
+
             .map(norm);
 
-          return ids.includes(id);
+          return ids.includes(
+            id
+          );
 
         }
       );
@@ -1727,7 +1542,9 @@ async function findUserName(
 
   }
 
-  return displayName(id);
+  return displayName(
+    id
+  );
 
 }
 
@@ -1743,7 +1560,9 @@ async function handleTextAnswer(
 ) {
 
   const question =
-    textQuestions.get(jid);
+    textQuestions.get(
+      jid
+    );
 
   if (!question) {
 
@@ -1752,7 +1571,9 @@ async function handleTextAnswer(
   }
 
   if (
-    !/^[123]$/.test(text)
+    !/^[123]$/.test(
+      text
+    )
   ) {
 
     return false;
@@ -1782,7 +1603,7 @@ async function handleTextAnswer(
       {
 
         text:
-          `🔐 تم تسجيل إجابتك مسبقاً.`
+          `ℹ️ ${displayName(senderId)}، لقد أجبت على هذا السؤال من قبل.`
 
       }
     );
@@ -1802,396 +1623,61 @@ async function handleTextAnswer(
       senderId
     );
 
-  const correct =
+  if (
     answer ===
-    question.answer;
+    question.answer
+  ) {
 
-  // تسجيل الإحصائيات
-  recordAnswer(
-    senderId,
-    correct
-  );
-
-  let total =
-    Number(
-      points[senderId]?.points || 0
-    );
-
-  if (correct) {
-
-    total =
+    const total =
       addPoints(
         senderId,
         CORRECT_POINTS,
         name
       );
 
-  }
+    await sock.sendMessage(
+      jid,
+      {
 
-  // إنشاء رمز سري
-  const secret =
-    createSecretResult(
-      correct
+        text:
+
+          `🎉👏 ممتاز ${name}!
+
+✅ إجابة صحيحة!
+
+⭐ +${CORRECT_POINTS} نقاط
+
+🏆 مجموع نقاطك: ${total}`
+
+      }
     );
 
-  // حفظ النتيجة داخلياً في الذاكرة
-  question.results =
-    question.results || {};
+  } else {
 
-  question.results[senderId] = {
+    const correct =
+      question.options[
+        question.answer - 1
+      ];
 
-    code:
-      secret.code,
+    await sock.sendMessage(
+      jid,
+      {
 
-    correct:
+        text:
 
-      secret.correct,
+          `❌ ${name}
 
-    answer,
+الإجابة غير صحيحة.
 
-    timestamp:
-      Date.now()
+✅ الإجابة الصحيحة:
+${question.answer}️⃣ ${correct}`
 
-  };
+      }
+    );
 
-  console.log(
-    `🔐 RESULT ${name}:`,
-    secret.code,
-    correct
-  );
-
-  /*
-   * لا نرسل النتيجة في الخاص.
-   * لا نكشف صحيح/خطأ في المجموعة.
-   */
-
-  await sock.sendMessage(
-    jid,
-    {
-
-      text:
-
-        `🔐 ${name}
-
-تم تسجيل إجابتك.
-
-🧩 الرمز:
-*${secret.code}*
-
-📌 النتيجة مخفية.`
-
-    }
-  );
+  }
 
   return true;
-
-}
-
-// ==================================================
-// RANDOM WORD
-// ==================================================
-
-async function sendRandomWord(
-  sock,
-  jid
-) {
-
-  try {
-
-    const text =
-      await educationalAI(
-        "WORD",
-        getRandomTopic()
-      );
-
-    await sendWord(
-      sock,
-      jid,
-      text
-    );
-
-  } catch (error) {
-
-    console.log(
-      "❌ !word error:",
-      error.message
-    );
-
-  }
-
-}
-
-// ==================================================
-// RANDOM GRAMMAR
-// ==================================================
-
-async function sendRandomGrammar(
-  sock,
-  jid
-) {
-
-  try {
-
-    const text =
-      await educationalAI(
-        "GRAMMAR",
-        getRandomTopic()
-      );
-
-    await sendGrammar(
-      sock,
-      jid,
-      text
-    );
-
-  } catch (error) {
-
-    console.log(
-      "❌ !grammar error:",
-      error.message
-    );
-
-  }
-
-}
-
-// ==================================================
-// RANDOM VERBS
-// ==================================================
-
-async function sendRandomVerbs(
-  sock,
-  jid
-) {
-
-  try {
-
-    const text =
-      await educationalAI(
-        "VERBS",
-        getRandomTopic()
-      );
-
-    await sendVerbs(
-      sock,
-      jid,
-      text
-    );
-
-  } catch (error) {
-
-    console.log(
-      "❌ !verbs error:",
-      error.message
-    );
-
-  }
-
-}
-
-// ==================================================
-// QUIZ
-// ==================================================
-
-async function sendQuiz(
-  sock,
-  jid
-) {
-
-  try {
-
-    const text =
-      await educationalAI(
-        "DIALOGUE",
-        getRandomTopic()
-      );
-
-    await sendQuestion(
-      sock,
-      jid,
-      text
-    );
-
-  } catch (error) {
-
-    console.log(
-      "❌ !quiz error:",
-      error.message
-    );
-
-  }
-
-}
-
-// ==================================================
-// MY STATS
-// ==================================================
-
-async function sendStats(
-  sock,
-  jid,
-  sender
-) {
-
-  const id =
-    norm(sender);
-
-  const stats =
-    ensureStats(id);
-
-  const totalPoints =
-    Number(
-      points[id]?.points || 0
-    );
-
-  const accuracy =
-    getAccuracy(id);
-
-  const name =
-    displayName(id);
-
-  await sock.sendMessage(
-    jid,
-    {
-
-      text:
-
-        `📊 *إحصائيات ${name}*
-
-⭐ النقاط:
-${totalPoints}
-
-📝 الأسئلة:
-${stats.questions}
-
-✅ الصحيحة:
-${stats.correct}
-
-❌ الخاطئة:
-${stats.wrong}
-
-🎯 نسبة النجاح:
-${accuracy}%
-
-🔥 السلسلة الحالية:
-${stats.streak}
-
-🏆 أفضل سلسلة:
-${stats.bestStreak}`
-
-    }
-  );
-
-}
-
-// ==================================================
-// MY RANK
-// ==================================================
-
-async function sendRank(
-  sock,
-  jid,
-  sender
-) {
-
-  const id =
-    norm(sender);
-
-  const allPlayers =
-    Object.entries(points)
-
-      .map(
-        ([jid, data]) => ({
-
-          jid,
-
-          points:
-            Number(
-              data.points || 0
-            )
-
-        })
-      )
-
-      .sort(
-        (a, b) =>
-          b.points -
-          a.points
-      );
-
-  const position =
-    allPlayers.findIndex(
-      player =>
-        norm(player.jid) === id
-    ) + 1;
-
-  const total =
-    Number(
-      points[id]?.points || 0
-    );
-
-  await sock.sendMessage(
-    jid,
-    {
-
-      text:
-
-        `🏆 *ترتيبك*
-
-👤 ${displayName(id)}
-
-🥇 المركز:
-#${position > 0 ? position : "-"}
-
-⭐ النقاط:
-${total}`
-
-    }
-  );
-
-}
-
-// ==================================================
-// MISTAKES
-// ==================================================
-
-async function sendMistakes(
-  sock,
-  jid,
-  sender
-) {
-
-  const id =
-    norm(sender);
-
-  const stats =
-    ensureStats(id);
-
-  await sock.sendMessage(
-    jid,
-    {
-
-      text:
-
-        `🧠 *أخطاؤك*
-
-👤 ${displayName(id)}
-
-❌ عدد الأخطاء:
-${stats.wrong}
-
-🎯 نسبة النجاح:
-${getAccuracy(id)}%
-
-🔥 السلسلة الحالية:
-${stats.streak}
-
-📚 سيتم تطوير هذا النظام لاحقاً
-لحفظ الأسئلة التي أخطأت فيها
-وتوليد تمارين مخصصة لك.`
-
-    }
-  );
 
 }
 
@@ -2278,7 +1764,8 @@ async function sendTopPlayers(
     jid,
     {
 
-      text: message
+      text:
+        message
 
     }
   );
@@ -2302,32 +1789,17 @@ async function sendHelp(
 
         `🇩🇪🤖 *German B1 Bot*
 
-📚 *التعليم*
+📚 محتوى B1 تلقائي
 
-!word
-كلمة ألمانية B1
+📝 أسئلة كتابية
 
-!grammar
-قاعدة ألمانية
+⭐ نقاط للإجابة الصحيحة
 
-!verbs
-5 أفعال B1
+💬 اكتب:
+$سؤالك
 
-!quiz
-اختبار فوري
-
-📊 *إحصائيات*
-
-!stats
-إحصائياتك
-
-!rank
-ترتيبك
-
-!mistakes
-أخطاؤك
-
-━━━━━━━━━━━━
+🎙️ صوت ألماني:
+!voice جملة بالألمانية
 
 ⭐ !point
 ⭐ !points
@@ -2336,42 +1808,155 @@ async function sendHelp(
 
 ⚡ !now
 
-🧪 !test
-
 ℹ️ !help
 
-━━━━━━━━━━━━
-
-💬 *AI*
-
-$سؤالك
-
-مثال:
-
-$اشرح لي الفرق بين
-weil و dass
-
-━━━━━━━━━━━━
-
-🔐 عند ظهور سؤال:
-
-اكتب:
-
-1
-
-أو
-
-2
-
-أو
-
-3
-
-📌 النتيجة لا يتم كشفها
-في المجموعة.`
+✍️ عند ظهور سؤال:
+اكتب 1 أو 2 أو 3`
 
     }
   );
+
+}
+
+// ==================================================
+// GERMAN VOICE
+// ==================================================
+
+async function createGermanVoice(
+  text,
+  outputFile
+) {
+
+  const tts =
+    new EdgeTTS({
+
+      voice:
+        "de-DE-ConradNeural",
+
+      lang:
+        "de-DE",
+
+      outputFormat:
+        "audio-24khz-48kbitrate-mono-mp3",
+
+      rate:
+        "default",
+
+      pitch:
+        "default",
+
+      volume:
+        "default",
+
+      timeout:
+        20000
+
+    });
+
+  await tts.ttsPromise(
+    text,
+    outputFile
+  );
+
+}
+
+// ==================================================
+// SEND GERMAN VOICE
+// ==================================================
+
+async function sendVoice(
+  sock,
+  jid,
+  text
+) {
+
+  if (
+    !jid.endsWith(
+      "@g.us"
+    )
+  ) {
+
+    return;
+
+  }
+
+  const outputFile =
+    path.join(
+      __dirname,
+      `voice_${Date.now()}.mp3`
+    );
+
+  try {
+
+    console.log(
+      "🎙️ Creating German voice..."
+    );
+
+    await createGermanVoice(
+      text,
+      outputFile
+    );
+
+    if (
+      !fs.existsSync(
+        outputFile
+      )
+    ) {
+
+      throw new Error(
+        "Voice file was not created."
+      );
+
+    }
+
+    await sock.sendMessage(
+      jid,
+      {
+
+        audio:
+          fs.readFileSync(
+            outputFile
+          ),
+
+        mimetype:
+          "audio/mpeg",
+
+        ptt:
+          true
+
+      }
+    );
+
+    console.log(
+      "🎙️ German voice sent."
+    );
+
+  } finally {
+
+    try {
+
+      if (
+        fs.existsSync(
+          outputFile
+        )
+      ) {
+
+        fs.unlinkSync(
+          outputFile
+        );
+
+      }
+
+    } catch (error) {
+
+      console.log(
+        "⚠️ Voice cleanup:",
+        error.message
+      );
+
+    }
+
+  }
 
 }
 
@@ -2401,11 +1986,15 @@ async function startBot() {
     const sock =
       makeWASocket({
 
-        auth: state,
+        auth:
+          state,
 
         logger:
           pino({
-            level: "silent"
+
+            level:
+              "silent"
+
           }),
 
         browser:
@@ -2446,7 +2035,8 @@ async function startBot() {
         } = update;
 
         if (
-          connection === "open"
+          connection ===
+          "open"
         ) {
 
           console.log(
@@ -2466,10 +2056,6 @@ async function startBot() {
           );
 
           console.log(
-            "📊 Statistics system ready"
-          );
-
-          console.log(
             "💬 AI system ready"
           );
 
@@ -2478,7 +2064,7 @@ async function startBot() {
           );
 
           console.log(
-            "🔐 Secret result system ready"
+            "🎙️ German voice ready"
           );
 
           console.log(
@@ -2492,13 +2078,15 @@ async function startBot() {
         }
 
         if (
-          connection === "close"
+          connection ===
+          "close"
         ) {
 
           globalSock =
             null;
 
-          let code = 0;
+          let code =
+            0;
 
           try {
 
@@ -2591,7 +2179,9 @@ async function startBot() {
         "📱 WHATSAPP PAIRING CODE:"
       );
 
-      console.log(code);
+      console.log(
+        code
+      );
 
       console.log(
         "======================================"
@@ -2635,15 +2225,27 @@ async function startBot() {
             const jid =
               msg.key.remoteJid;
 
-            if (!jid) {
+            if (
+              !jid
+            ) {
 
               continue;
 
             }
 
+            // ==================================================
+            // PRIVATE CHAT BLOCK
+            // ==================================================
+
             if (
-              !jid.endsWith("@g.us")
+              !jid.endsWith(
+                "@g.us"
+              )
             ) {
+
+              console.log(
+                "🚫 Private message ignored."
+              );
 
               continue;
 
@@ -2672,7 +2274,9 @@ async function startBot() {
                 msg
               ).trim();
 
-            if (!text) {
+            if (
+              !text
+            ) {
 
               continue;
 
@@ -2687,12 +2291,14 @@ async function startBot() {
               text.toLowerCase();
 
             // ==================================================
-            // QUESTION ANSWER
+            // TEXT QUESTION ANSWER
             // ==================================================
 
             if (
               sender &&
-              /^[123]$/.test(text)
+              /^[123]$/.test(
+                text
+              )
             ) {
 
               const handled =
@@ -2703,7 +2309,9 @@ async function startBot() {
                   text
                 );
 
-              if (handled) {
+              if (
+                handled
+              ) {
 
                 continue;
 
@@ -2716,7 +2324,8 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!test"
+              lower ===
+              "!test"
             ) {
 
               await sock.sendMessage(
@@ -2733,13 +2342,11 @@ async function startBot() {
 
 ⭐ Points يعمل
 
-📊 Stats يعمل
-
 💬 AI يعمل مع $
 
 📝 Questions تعمل
 
-🔐 Secret results تعمل
+🎙️ Voice يعمل
 
 🏆 !top يعمل`
 
@@ -2751,107 +2358,61 @@ async function startBot() {
             }
 
             // ==================================================
-            // EDUCATIONAL COMMANDS
+            // VOICE
             // ==================================================
 
             if (
-              lower === "!word"
+              lower.startsWith(
+                "!voice"
+              )
             ) {
 
-              await sendRandomWord(
-                sock,
-                jid
-              );
+              const voiceText =
+                text
+                  .slice(6)
+                  .trim();
 
-              continue;
+              if (
+                !voiceText
+              ) {
 
-            }
-
-            if (
-              lower === "!grammar"
-            ) {
-
-              await sendRandomGrammar(
-                sock,
-                jid
-              );
-
-              continue;
-
-            }
-
-            if (
-              lower === "!verbs"
-            ) {
-
-              await sendRandomVerbs(
-                sock,
-                jid
-              );
-
-              continue;
-
-            }
-
-            if (
-              lower === "!quiz"
-            ) {
-
-              await sendQuiz(
-                sock,
-                jid
-              );
-
-              continue;
-
-            }
-
-            if (
-              lower === "!stats"
-            ) {
-
-              if (sender) {
-
-                await sendStats(
-                  sock,
+                await sock.sendMessage(
                   jid,
-                  sender
+                  {
+
+                    text:
+                      "🎙️ اكتب الجملة بعد !voice\n\nمثال:\n!voice Guten Morgen, wie geht es dir?"
+
+                  }
                 );
+
+                continue;
 
               }
 
-              continue;
+              try {
 
-            }
-
-            if (
-              lower === "!rank"
-            ) {
-
-              if (sender) {
-
-                await sendRank(
+                await sendVoice(
                   sock,
                   jid,
-                  sender
+                  voiceText
                 );
 
-              }
+              } catch (error) {
 
-              continue;
+                console.log(
+                  "❌ Voice error:",
+                  error.message
+                );
 
-            }
-
-            if (
-              lower === "!mistakes"
-            ) {
-
-              if (sender) {
-
-                await sendMistakes(
-                  sock,
+                await sock.sendMessage(
                   jid,
-                  sender
+                  {
+
+                    text:
+                      "❌ حدث خطأ أثناء إنشاء الصوت."
+
+                  }
                 );
 
               }
@@ -2865,11 +2426,15 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!point" ||
-              lower === "!points"
+              lower ===
+                "!point" ||
+              lower ===
+                "!points"
             ) {
 
-              if (sender) {
+              if (
+                sender
+              ) {
 
                 await sendMyPoints(
                   sock,
@@ -2888,7 +2453,8 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!top"
+              lower ===
+              "!top"
             ) {
 
               await sendTopPlayers(
@@ -2905,7 +2471,8 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!help"
+              lower ===
+              "!help"
             ) {
 
               await sendHelp(
@@ -2922,11 +2489,14 @@ async function startBot() {
             // ==================================================
 
             if (
-              lower === "!now"
+              lower ===
+              "!now"
             ) {
 
               if (
-                ALLOWED_GROUPS.includes(jid)
+                ALLOWED_GROUPS.includes(
+                  jid
+                )
               ) {
 
                 await sendContent(
@@ -2945,7 +2515,9 @@ async function startBot() {
             // ==================================================
 
             if (
-              text.startsWith("$")
+              text.startsWith(
+                "$"
+              )
             ) {
 
               const question =
@@ -2953,7 +2525,9 @@ async function startBot() {
                   .slice(1)
                   .trim();
 
-              if (!question) {
+              if (
+                !question
+              ) {
 
                 continue;
 
@@ -3000,7 +2574,6 @@ ${answer}`
                       `❌ حدث خطأ في الذكاء الاصطناعي.
 
 تأكد من:
-
 GROQ_API_KEY
 
 في Daytona.`
@@ -3042,7 +2615,9 @@ GROQ_API_KEY
       setInterval(
         async () => {
 
-          if (!globalSock) {
+          if (
+            !globalSock
+          ) {
 
             return;
 
@@ -3110,18 +2685,10 @@ GROQ_API_KEY
 
 loadPoints();
 
-loadStats();
-
 console.log(
   `⭐ Loaded ${
     Object.keys(points).length
   } players.`
-);
-
-console.log(
-  `📊 Loaded ${
-    Object.keys(playerStats).length
-  } player stats.`
 );
 
 startBot();
